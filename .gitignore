@@ -1,0 +1,12 @@
+data/raw/
+data/wal/
+models/
+core/out/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.idea/
+.vscode/
+.DS_Store
+.env

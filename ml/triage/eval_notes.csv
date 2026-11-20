@@ -1,0 +1,39 @@
+notes,severity
+"man collapsed in the street, not breathing",P1_CRITICAL
+"my husband is unresponsive and snoring loudly",P1_CRITICAL
+"crushing chest pain going down the left arm",P1_CRITICAL
+"my dad is grey and sweaty and says his jaw and arm hurt",P1_CRITICAL
+"her face is drooping on one side and she can't lift her arm",P1_CRITICAL
+"he suddenly can't speak properly, words are all jumbled",P1_CRITICAL
+"stabbed in the abdomen, lots of blood",P1_CRITICAL
+"baby is choking and turning blue",P1_CRITICAL
+"found my neighbour on the floor, won't wake up",P1_CRITICAL
+"blood spurting from his leg after chainsaw slipped",P1_CRITICAL
+"no pulse, we started CPR",P1_CRITICAL
+"elle ne respire plus",P1_CRITICAL
+"severe difficulty breathing, can only say two words",P2_EMERGENT
+"asthma attack, inhaler not helping",P2_EMERGENT
+"seizure lasting 5 minutes, first time",P2_EMERGENT
+"took a whole bottle of pills an hour ago",P2_EMERGENT
+"pregnant 38 weeks, waters broke, contractions 2 minutes apart",P2_EMERGENT
+"hot oil burned both arms and chest",P2_EMERGENT
+"throat swelling after bee sting",P2_EMERGENT
+"diabetic, confused and sweating, sugar is 2.1",P2_EMERGENT
+"car rolled over on the motorway, driver trapped",P2_EMERGENT
+"skier hit a tree at speed, drowsy and confused",P2_EMERGENT
+"teen took something at a party and is drowsy and vomiting",P2_EMERGENT
+"fell off a ladder, ankle looks broken",P3_URGENT
+"elderly lady fell, hip pain, can't get up",P3_URGENT
+"high fever and vomiting since yesterday",P3_URGENT
+"bad abdominal pain for 6 hours",P3_URGENT
+"minor car crash, neck sore, walking around",P3_URGENT
+"cut finger while cooking, bleeding controlled with a towel",P3_URGENT
+"dizzy and weak after a long hike",P3_URGENT
+"back pain, cannot get out of bed",P3_URGENT
+"child with earache and temperature",P3_URGENT
+"twisted knee playing football, swollen",P3_URGENT
+"medical alarm pendant went off, resident says she is fine",P4_ROUTINE
+"needs transport to dialysis appointment",P4_ROUTINE
+"lost prescription, wants advice",P4_ROUTINE
+"mild cold symptoms for three days",P4_ROUTINE
+"wants a check on her blood pressure, feels well",P4_ROUTINE

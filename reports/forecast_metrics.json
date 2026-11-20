@@ -1,0 +1,77 @@
+{
+  "calls": 48812,
+  "zones": 81,
+  "train_rows": 392283,
+  "test_rows": 54432,
+  "test_period": [
+    "2016-07-27 12:00:00",
+    "2016-08-24 11:00:00"
+  ],
+  "best_iteration": 369,
+  "metrics": {
+    "seasonal_naive (same hour last week)": {
+      "poisson_deviance": 1.1162,
+      "mae_zone_hour": 0.1687,
+      "wape_zone_shift": 0.993,
+      "hotspot_capture@5": 0.1954,
+      "oracle_capture@5": 0.3233
+    },
+    "historical_avg (zone x hour-of-week)": {
+      "poisson_deviance": 0.4715,
+      "mae_zone_hour": 0.1602,
+      "wape_zone_shift": 0.8015,
+      "hotspot_capture@5": 0.2291,
+      "oracle_capture@5": 0.3233
+    },
+    "separable (zone rate x hour-of-week profile)": {
+      "poisson_deviance": 0.4012,
+      "mae_zone_hour": 0.1606,
+      "wape_zone_shift": 0.7973,
+      "hotspot_capture@5": 0.227,
+      "oracle_capture@5": 0.3233
+    },
+    "lightgbm_poisson": {
+      "poisson_deviance": 0.4009,
+      "mae_zone_hour": 0.1612,
+      "wape_zone_shift": 0.7965,
+      "hotspot_capture@5": 0.2275,
+      "oracle_capture@5": 0.3233
+    }
+  },
+  "feature_gain": {
+    "zone_id": 295408.0,
+    "roll168": 82535.0,
+    "hod": 70200.0,
+    "roll24": 18844.0,
+    "how": 8598.0,
+    "lat": 3177.0,
+    "lng": 3124.0,
+    "same_how_4w": 2563.0,
+    "dow": 1806.0,
+    "lag1": 691.0,
+    "lag2": 400.0,
+    "lag24": 392.0,
+    "lag168": 387.0,
+    "lag336": 259.0
+  },
+  "spatial_stability_by_shift": {
+    "night 00-08": {
+      "calls": 9195,
+      "tvd_observed": 0.0482,
+      "tvd_noise_mean": 0.0336,
+      "tvd_noise_p99": 0.0399
+    },
+    "day 08-16": {
+      "calls": 21777,
+      "tvd_observed": 0.0257,
+      "tvd_noise_mean": 0.0216,
+      "tvd_noise_p99": 0.0261
+    },
+    "evening 16-24": {
+      "calls": 17327,
+      "tvd_observed": 0.0311,
+      "tvd_noise_mean": 0.0244,
+      "tvd_noise_p99": 0.0295
+    }
+  }
+}

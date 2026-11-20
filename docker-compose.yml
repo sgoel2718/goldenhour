@@ -1,0 +1,13 @@
+# Local run: `docker compose up --build` → http://localhost:8080
+services:
+  goldenhour:
+    build: .
+    ports: ["8080:7860"]
+    environment:
+      - GH_AMBULANCES=8
+      - GH_SPEED=60
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}    # optional: enables LLM triage; read from your shell, never committed
+    volumes:
+      - wal:/app/data/wal                           # the write-ahead log survives restarts
+volumes:
+  wal:

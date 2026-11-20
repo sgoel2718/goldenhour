@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoldenHour — Ambulance Dispatch</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0f14;--panel:#121821;--panel2:#18202b;--line:#253041;--ink:#e6edf3;--ink2:#9fb0c3;--muted:#6b7c90;
+  --accent:#ffb020;--p1:#ff4d4f;--p2:#ff8a3d;--p3:#f5c542;--p4:#8a96a3;
+  --avail:#3ddc97;--enroute:#ff4d4f;--scene:#ff8a3d;--transport:#b57bff;--handover:#4ea1ff;--returning:#2ec4c4;
+}
+:root[data-theme="light"]{--bg:#f4f6f9;--panel:#ffffff;--panel2:#f0f3f7;--line:#dbe2ea;--ink:#111822;--ink2:#3d4b5c;--muted:#6b7a8c}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:.2px}
+.brand .dot{width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(255,176,32,.18)}
+.brand small{font-weight:500;color:var(--muted);font-size:12px}
+nav{display:flex;gap:4px;margin-left:8px}
+nav button{background:none;border:1px solid transparent;color:var(--ink2);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on{background:var(--panel2);border-color:var(--line);color:var(--ink)}
+.kpis{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.kpi{display:flex;flex-direction:column;min-width:64px}
+.kpi b{font:600 17px/1.1 "JetBrains Mono",monospace}
+.kpi span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+main{display:grid;grid-template-columns:1fr 380px;height:calc(100% - 58px)}
+#map{height:100%;background:#0d1117}
+aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink2)}
+textarea{width:100%;min-height:62px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{border:1px solid var(--line);background:var(--panel);color:var(--ink2);border-radius:999px;padding:3px 9px;font-size:12px;cursor:pointer}
+.row{display:flex;gap:8px;align-items:center}
+button.go{background:var(--accent);color:#1a1200;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+button.ghost{background:none;border:1px solid var(--line);color:var(--ink2);border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit}
+.hint{color:var(--muted);font-size:12px}
+.sev{display:inline-block;padding:1px 7px;border-radius:6px;font:600 11px "JetBrains Mono",monospace;color:#111}
+.P1_CRITICAL{background:var(--p1)}.P2_EMERGENT{background:var(--p2)}.P3_URGENT{background:var(--p3)}.P4_ROUTINE{background:var(--p4)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500}
+td.num,th.num{text-align:right;font-family:"JetBrains Mono",monospace}
+tr.win td{color:var(--avail);font-weight:600}
+.log{font:12px/1.5 "JetBrains Mono",monospace;color:var(--ink2);max-height:260px;overflow:auto}
+.log div{padding:2px 0;border-bottom:1px dashed var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--ink2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.toggle{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.view{display:none}.view.on{display:flex}
+#results{padding:24px;overflow:auto;height:100%;display:none}
+#results.on{display:block}
+#results .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;max-width:1400px;margin:0 auto}
+#results h2{font-size:15px;margin:0 0 6px}
+#results .wide{grid-column:1/-1}
+#results td.num{white-space:nowrap}
+#results p{color:var(--ink2);margin:6px 0 10px}
+.big{font:700 34px/1 "JetBrains Mono",monospace;color:var(--accent)}
+.amb-icon{border-radius:6px;border:2px solid #0b0f14;color:#0b0f14;font:700 10px/16px "JetBrains Mono",monospace;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.leaflet-container{font:inherit}
+.leaflet-popup-content{font-size:12px}
+@media (max-width:900px){main{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}aside{border-left:0;border-top:1px solid var(--line)}#map{height:55vh}.kpis{gap:12px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>GoldenHour <small>real-time ambulance dispatch · Andorra road network</small></div>
+  <nav><button data-tab="live" class="on">Live dispatch</button><button data-tab="lab">Routing lab</button><button data-tab="results">Results</button></nav>
+  <div class="kpis">
+    <div class="kpi"><b id="k-clock">—</b><span>sim clock</span></div>
+    <div class="kpi"><b id="k-calls">0</b><span>calls</span></div>
+    <div class="kpi"><b id="k-p1">—</b><span>P1 ≤ 8 min</span></div>
+    <div class="kpi"><b id="k-med">—</b><span>median resp.</span></div>
+    <div class="kpi"><b id="k-busy">0</b><span>units busy</span></div>
+    <div class="kpi"><b id="k-queue">0</b><span>queued</span></div>
+    <div class="kpi"><b id="k-p99">—</b><span>dispatch p99</span></div>
+  </div>
+</header>
+<main id="mainLive">
+  <div id="map"></div>
+  <aside>
+    <section class="view on" id="v-live" style="flex-direction:column;gap:14px">
+      <div class="card">
+        <h3>Report an emergency</h3>
+        <div class="hint" id="pickHint">Click the map to set the caller's location.</div>
+        <textarea id="notes" placeholder="What the caller says…">my dad is sweating and has crushing chest pain</textarea>
+        <div class="chips" id="chips"></div>
+        <div class="row"><button class="go" id="send">Dispatch</button><button class="ghost" id="auto">Pause simulated calls</button></div>
+      </div>
+      <div class="card" id="decision" hidden>
+        <h3>Decision</h3>
+        <div id="decisionBody"></div>
+      </div>
+      <div class="card">
+        <h3>Map layers</h3>
+        <div class="toggle">
+          <label><input type="checkbox" id="l-demand" checked> forecast demand</label>
+          <label><input type="checkbox" id="l-routes" checked> routes</label>
+          <label><input type="checkbox" id="l-bases"> bases</label>
+        </div>
+        <div class="legend" style="margin-top:8px">
+          <span><i style="background:var(--avail)"></i>available</span><span><i style="background:var(--enroute)"></i>en route</span>
+          <span><i style="background:var(--scene)"></i>on scene</span><span><i style="background:var(--transport)"></i>to hospital</span>
+          <span><i style="background:var(--handover)"></i>handover</span><span><i style="background:var(--returning)"></i>returning</span>
+        </div>
+      </div>
+      <div class="card"><h3>Decision log</h3><div class="log" id="log"></div></div>
+    </section>
+    <section class="view" id="v-lab" style="flex-direction:column;gap:14px">
+      <div class="card">
+        <h3>Routing lab</h3>
+        <p class="hint">Click two points on the map. The same query runs through four shortest-path algorithms on the real road graph — identical answers, very different work.</p>
+        <div class="row"><button class="ghost" id="labReset">Reset points</button></div>
+        <div id="labOut" style="margin-top:10px"></div>
+      </div>
+    </section>
+  </aside>
+</main>
+<section id="results"><div class="grid" id="resultsGrid"><div class="card">Loading…</div></div></section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const API = '';
+const $ = id => document.getElementById(id);
+const PHASE = {AVAILABLE:'--avail',EN_ROUTE:'--enroute',ON_SCENE:'--scene',TRANSPORTING:'--transport',HANDOVER:'--handover',RETURNING:'--returning'};
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SEV = {P1_CRITICAL:'--p1',P2_EMERGENT:'--p2',P3_URGENT:'--p3',P4_ROUTINE:'--p4'};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (x, d=1) => x == null || isNaN(x) ? '—' : Number(x).toFixed(d);
+
+const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView([42.53, 1.55], 12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {maxZoom:19, attribution:'© OpenStreetMap contributors © CARTO'}).addTo(map);
+const layers = {demand:L.layerGroup().addTo(map), routes:L.layerGroup().addTo(map), bases:L.layerGroup(), hosp:L.layerGroup().addTo(map), inc:L.layerGroup().addTo(map), amb:L.layerGroup().addTo(map), lab:L.layerGroup().addTo(map), pick:L.layerGroup().addTo(map)};
+let tab = 'live', picked = null, labPts = [], lastState = null;
+
+fetch(API + '/api/v1/info').then(r => r.json()).then(i => map.fitBounds(i.bounds, {padding:[10,10]}));
+
+// ---------------------------------------------------------------- tabs
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  tab = b.dataset.tab;
+  $('mainLive').style.display = tab === 'results' ? 'none' : '';
+  $('results').classList.toggle('on', tab === 'results');
+  $('v-live').classList.toggle('on', tab === 'live');
+  $('v-lab').classList.toggle('on', tab === 'lab');
+  layers.lab.clearLayers(); labPts = []; $('labOut').innerHTML = '';
+  if (tab === 'results') loadResults(); else setTimeout(() => map.invalidateSize(), 50);
+});
+
+// ---------------------------------------------------------------- report an emergency
+const SAMPLES = ['not breathing, collapsed in the street', 'face drooping and slurred speech', 'my dad is grey and sweaty, jaw hurts', 'fell off a ladder, ankle broken', 'pregnant, contractions every 3 minutes', 'kitchen fire, burns on hands'];
+$('chips').innerHTML = SAMPLES.map(s => `<span class="chip">${esc(s)}</span>`).join('');
+$('chips').onclick = e => { if (e.target.classList.contains('chip')) $('notes').value = e.target.textContent; };
+
+map.on('click', e => {
+  if (tab === 'live') {
+    picked = e.latlng;
+    layers.pick.clearLayers();
+    L.circleMarker(picked, {radius:9, color:css('--accent'), weight:3, fillOpacity:.15}).addTo(layers.pick);
+    $('pickHint').textContent = `Location set: ${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)}`;
+  } else if (tab === 'lab') {
+    if (labPts.length === 2) { labPts = []; layers.lab.clearLayers(); }
+    labPts.push(e.latlng);
+    L.circleMarker(e.latlng, {radius:7, color:'#fff', weight:2, fillColor: labPts.length === 1 ? css('--avail') : css('--p1'), fillOpacity:1}).addTo(layers.lab);
+    if (labPts.length === 2) runLab();
+  }
+});
+
+$('send').onclick = async () => {
+  const c = picked || map.getCenter();
+  const btn = $('send'); btn.disabled = true;
+  try {
+    const r = await fetch(API + '/api/v1/incidents', {method:'POST', headers:{'Content-Type':'application/json', 'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Math.random())},
+      body: JSON.stringify({lat:c.lat, lon:c.lng, notes:$('notes').value})});
+    const d = await r.json();
+    if (r.status === 429) { showDecision(`<div class="hint">Rate limited — try again in a second.</div>`); return; }
+    if (!r.ok) { showDecision(`<div class="hint">${esc(d.error || 'error')}</div>`); return; }
+    renderDecision(d);
+  } finally { btn.disabled = false; }
+};
+
+function showDecision(html) { $('decision').hidden = false; $('decisionBody').innerHTML = html; }
+
+function renderDecision(d) {
+  const t = d.triage, a = d.assignment;
+  const best = a ? a.ambulance : null;
+  const nearestSL = d.candidates.length ? d.candidates.reduce((m, c) => c.straightLineKm < m.straightLineKm ? c : m) : null;
+  let html = `<div class="row" style="flex-wrap:wrap"><span class="sev ${t.severity}">${t.severity.replace('_',' ')}</span> <b>${esc(t.category)}</b>
+    <span class="hint">needs ${esc(t.need)} · triage by ${esc(t.source)} in ${fmt(t.ms,1)} ms</span></div>`;
+  if (a) {
+    html += `<p style="margin:8px 0"><b>AMB-${a.ambulance}</b> (${a.unit}) dispatched · ETA <b>${fmt(a.etaMin)} min</b> → ${esc(a.hospital)} (+${fmt(a.transportMin)} min) · decided in ${fmt(d.dispatchMs,2)} ms</p>`;
+    if (a.path && a.path.length) { const pl = L.polyline(a.path, {color:css('--accent'), weight:5, opacity:.9}).addTo(layers.routes); setTimeout(() => layers.routes.removeLayer(pl), 6000); }
+  } else html += `<p style="margin:8px 0">No unit free — queued by severity, then arrival time.</p>`;
+  if (d.candidates.length) {
+    html += `<table><tr><th>Unit</th><th class="num">straight line</th><th class="num">road ETA</th></tr>` +
+      [...d.candidates].sort((x,y) => x.roadEtaMin - y.roadEtaMin).map(c => `<tr class="${c.ambulance===best?'win':''}"><td>AMB-${c.ambulance}${c.ambulance===best?' ✓':''}</td><td class="num">${fmt(c.straightLineKm,2)} km</td><td class="num">${fmt(c.roadEtaMin)} min</td></tr>`).join('') + `</table>`;
+    if (nearestSL && best != null && nearestSL.ambulance !== best)
+      html += `<p class="hint">The straight-line nearest unit (AMB-${nearestSL.ambulance}) would have taken ${fmt(nearestSL.roadEtaMin)} min — mountain roads make "closest" misleading.</p>`;
+  }
+  showDecision(html);
+}
+
+$('auto').onclick = async () => {
+  const on = !(lastState && lastState.autoCalls);
+  await fetch(API + '/api/v1/sim', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({autoCalls:on})});
+};
+
+// ---------------------------------------------------------------- live state
+let demandLoaded = false;
+async function loadDemand() {
+  const d = await (await fetch(API + '/api/v1/demand')).json();
+  layers.demand.clearLayers();
+  const max = Math.max(...d.zones.map(z => z.perWeek));
+  d.zones.forEach(z => L.circle([z.lat, z.lon], {radius: 150 + 600 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.06 + .22 * z.perWeek / max, bubblingMouseEvents:true})
+    .bindTooltip(`zone ${z.id}: ${fmt(z.perWeek,1)} calls/week forecast, ${fmt(z.nowPerHour,3)}/h now`).addTo(layers.demand));
+  demandLoaded = true;
+}
+
+const ambMarkers = {};
+function ambIcon(a) {
+  const c = css(PHASE[a.phase] || '--avail');
+  return L.divIcon({className:'', html:`<div class="amb-icon" style="background:${c};width:30px">${a.unit}${a.id}</div>`, iconSize:[30,16], iconAnchor:[15,8]});
+}
+
+async function poll() {
+  try {
+    const s = await (await fetch(API + '/api/v1/state')).json();
+    lastState = s;
+    $('k-clock').textContent = s.clock;
+    $('k-calls').textContent = s.stats.calls;
+    $('k-p1').textContent = s.stats.p1Within8 == null ? '—' : Math.round(100 * s.stats.p1Within8) + '%';
+    $('k-med').textContent = s.stats.medianResponseMin == null ? '—' : fmt(s.stats.medianResponseMin) + 'm';
+    $('k-busy').textContent = `${s.stats.busy}/${s.ambulances.length}`;
+    $('k-queue').textContent = s.stats.waiting;
+    $('k-p99').textContent = s.stats.dispatchP99Ms == null || isNaN(s.stats.dispatchP99Ms) ? '—' : `≤${s.stats.dispatchP99Ms}ms`;
+    $('auto').textContent = s.autoCalls ? 'Pause simulated calls' : `Resume simulated calls (${s.speed}× time)`;
+
+    if (layers.hosp.getLayers().length === 0) s.hospitals.forEach(h => L.marker([h.lat, h.lon], {icon:L.divIcon({className:'', html:'<div style="width:20px;height:20px;border-radius:5px;background:#fff;color:#d00;font:900 16px/20px sans-serif;text-align:center">+</div>', iconSize:[20,20], iconAnchor:[10,10]})})
+      .bindTooltip(`<b>${esc(h.name)}</b><br>${h.specialties.join(', ')}`).addTo(layers.hosp));
+
+    layers.routes.eachLayer(l => { if (l.options.live) layers.routes.removeLayer(l); });
+    layers.bases.clearLayers();
+    const seen = new Set();
+    s.ambulances.forEach(a => {
+      seen.add(a.id);
+      if (!ambMarkers[a.id]) ambMarkers[a.id] = L.marker([a.lat, a.lon]).addTo(layers.amb);
+      ambMarkers[a.id].setLatLng([a.lat, a.lon]).setIcon(ambIcon(a))
+        .bindTooltip(`AMB-${a.id} (${a.unit}) · ${a.phase}${a.incident ? ' · ' + a.incident : ''}${a.secondsLeft ? ' · ' + fmt(a.secondsLeft/60) + ' min left' : ''}`);
+      if (a.path && $('l-routes').checked) L.polyline(a.path, {live:true, color:css(PHASE[a.phase]), weight:3, opacity:.75, dashArray: a.phase === 'RETURNING' ? '4 6' : null}).addTo(layers.routes);
+      L.circleMarker(a.base, {radius:5, color:'#fff', weight:1, fillColor:'#555', fillOpacity:1}).bindTooltip(`base of AMB-${a.id}`).addTo(layers.bases);
+    });
+
+    layers.inc.clearLayers();
+    const live = new Set(s.ambulances.filter(a => a.incident && a.phase !== 'RETURNING').map(a => a.incident));
+    s.incidents.forEach(i => {
+      const active = live.has(i.id) || i.ambulance == null;
+      L.circleMarker([i.lat, i.lon], {radius: active ? 7 : 4, color:'#000', weight:1, fillColor:css(SEV[i.severity]), fillOpacity: active ? .95 : .35})
+        .bindTooltip(`<b>${i.id}</b> ${i.severity}<br>${esc(i.category)}<br><i>${esc(i.notes)}</i><br>${i.responseMin != null ? 'response ' + fmt(i.responseMin) + ' min' : i.ambulance == null ? 'waiting for a unit' : 'unit en route'}`).addTo(layers.inc);
+    });
+    $('log').innerHTML = s.events.map(e => `<div>${esc(e.text)}</div>`).join('');
+    if (!demandLoaded) loadDemand();
+  } catch (e) { /* server restarting: keep polling */ }
+}
+setInterval(poll, 1000); poll();
+['l-demand','l-routes','l-bases'].forEach(id => $(id).onchange = () => {
+  const lyr = {['l-demand']:layers.demand, ['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
+  $(id).checked ? lyr.addTo(map) : map.removeLayer(lyr);
+});
+
+// ---------------------------------------------------------------- routing lab
+$('labReset').onclick = () => { labPts = []; layers.lab.clearLayers(); $('labOut').innerHTML = ''; };
+async function runLab() {
+  const [a, b] = labPts, q = `from=${a.lat},${a.lng}&to=${b.lat},${b.lng}`;
+  const rows = [];
+  for (const algo of ['dijkstra', 'astar', 'bidi', 'ch']) rows.push(await (await fetch(`${API}/api/v1/route?${q}&algo=${algo}`)).json());
+  const ch = rows[3];
+  if (ch.path.length) L.polyline(ch.path, {color:css('--accent'), weight:5}).addTo(layers.lab);
+  const base = rows[0].settledNodes;
+  $('labOut').innerHTML = `<p>Drive time <b>${fmt(ch.minutes)} min</b> — all four agree${rows.every(r => Math.abs(r.minutes - ch.minutes) < 1e-6) ? ' exactly ✓' : ' ✗'}</p>
+    <table><tr><th>Algorithm</th><th class="num">nodes settled</th><th class="num">vs Dijkstra</th><th class="num">time</th></tr>` +
+    rows.map(r => `<tr><td>${r.algorithm}</td><td class="num">${r.settledNodes.toLocaleString()}</td><td class="num">${fmt(base / Math.max(1, r.settledNodes), 0)}× less</td><td class="num">${fmt(r.queryMs, 2)} ms</td></tr>`).join('') + `</table>
+    <p class="hint">Contraction hierarchies precompute "shortcut" edges once, then every query only climbs upward from both ends.</p>`;
+}
+
+// ---------------------------------------------------------------- results
+function mdTable(md) {
+  const lines = md.split('\n'), out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].startsWith('|')) {
+      const rows = [];
+      while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+      const cells = r => r.split('|').slice(1, -1).map(c => c.trim().replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'));
+      out.push(`<table><tr>${cells(rows[0]).map((c, j) => `<th class="${j ? 'num' : ''}">${c}</th>`).join('')}</tr>${rows.slice(2).map(r => `<tr>${cells(r).map((c, j) => `<td class="${j ? 'num' : ''}">${c}</td>`).join('')}</tr>`).join('')}</table>`);
+    } else {
+      const l = lines[i++].trim();
+      if (l.startsWith('# ')) continue;
+      if (l.startsWith('## ')) out.push(`<h2 style="margin-top:14px">${esc(l.slice(3))}</h2>`);
+      else if (l) out.push(`<p>${esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`);
+    }
+  }
+  return out.join('');
+}
+
+async function loadResults() {
+  const r = await (await fetch(API + '/api/v1/reports')).json();
+  const f = r.forecast;
+  let fc = '';
+  if (f) {
+    const names = Object.keys(f.metrics);
+    fc = `<p>${f.calls.toLocaleString()} real EMS calls, ${f.zones} zones (≈5 km cells), last 4 weeks held out (${esc(f.test_period[0].slice(0,10))} → ${esc(f.test_period[1].slice(0,10))}).</p>
+      <table><tr><th>Model</th><th class="num">Poisson deviance ↓</th><th class="num">WAPE per zone-shift ↓</th><th class="num">hotspot capture@5 ↑</th></tr>` +
+      names.map(n => { const m = f.metrics[n]; return `<tr><td>${esc(n)}</td><td class="num">${fmt(m.poisson_deviance,4)}</td><td class="num">${fmt(100*m.wape_zone_shift,1)}%</td><td class="num">${fmt(100*m['hotspot_capture@5'],1)}%</td></tr>`; }).join('') + `</table>
+      <p class="hint">Finding: a LightGBM model with lag/rolling features ties a simple separable model (zone rate × hour-of-week profile). Calls per zone-hour are close to pure Poisson noise, so the separable model is what feeds the planner — simpler, explainable, and it transfers to a new city.</p>`;
+    if (f.spatial_stability_by_shift) {
+      const s = f.spatial_stability_by_shift;
+      fc += `<h2 style="margin-top:14px">Does <i>where</i> emergencies happen change by shift?</h2><table><tr><th>Shift</th><th class="num">calls</th><th class="num">shift vs all-day TVD</th><th class="num">noise-only p99</th></tr>` +
+        Object.entries(s).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.calls.toLocaleString()}</td><td class="num">${fmt(100*v.tvd_observed,1)}%</td><td class="num">${fmt(100*v.tvd_noise_p99,1)}%</td></tr>`).join('') +
+        `</table><p class="hint">Only about 0.4–1.5% of call mass moves between shifts beyond sampling noise — which is why re-positioning every shift doesn't pay in the simulator.</p>`;
+    }
+  }
+  $('resultsGrid').innerHTML = `
+    <div class="card wide"><h2>Simulation: same 8 ambulances, smarter decisions</h2>${r.simulation ? mdTable(r.simulation) : '<p>Run <code>simulate</code> to generate.</p>'}</div>
+    <div class="card"><h2>Demand forecasting on real 911 calls</h2>${fc || '<p>Run the ML pipeline to generate.</p>'}</div>
+    <div class="card"><h2>Routing &amp; dispatch performance</h2>${r.benchmarks ? mdTable(r.benchmarks) : '<p>Run <code>bench</code> to generate.</p>'}</div>`;
+}
+</script>
+</body>
+</html>

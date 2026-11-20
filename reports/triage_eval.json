@@ -1,0 +1,22 @@
+[
+  {
+    "model": "rules-v1",
+    "n": 38,
+    "accuracy": 0.579,
+    "p1_recall": 0.5,
+    "under_triage_rate": 0.289,
+    "misses": [
+      "my dad is grey and sweaty and says his jaw and arm hurt",
+      "her face is drooping on one side and she can't lift her arm",
+      "he suddenly can't speak properly, words are all jumbled",
+      "found my neighbour on the floor, won't wake up",
+      "blood spurting from his leg after chainsaw slipped",
+      "elle ne respire plus",
+      "took a whole bottle of pills an hour ago",
+      "throat swelling after bee sting",
+      "car rolled over on the motorway, driver trapped",
+      "skier hit a tree at speed, drowsy and confused",
+      "teen took something at a party and is drowsy and vomiting"
+    ]
+  }
+]
