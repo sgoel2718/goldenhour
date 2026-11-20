@@ -181,7 +181,7 @@ def main():
     keep = largest_scc(used, edges)
     ids = {osm: i for i, osm in enumerate(sorted(keep))}
     os.makedirs(a.out, exist_ok=True)
-    with open(os.path.join(a.out, "nodes.csv"), "w") as f:
+    with open(os.path.join(a.out, "nodes.csv"), "w", encoding="utf-8", newline="\n") as f:
         f.write("id,lat,lon\n")
         for osm, i in ids.items():
             lat, lon = coords[osm]
@@ -193,11 +193,11 @@ def main():
             t = length / (speed / 3.6)
             if key not in best or t < best[key][2]:
                 best[key] = (length, speed, t, hw)
-    with open(os.path.join(a.out, "edges.csv"), "w") as f:
+    with open(os.path.join(a.out, "edges.csv"), "w", encoding="utf-8", newline="\n") as f:
         f.write("from,to,length_m,speed_kph,travel_s,road_class\n")
         for (u, v), (length, speed, t, hw) in best.items():
             f.write(f"{u},{v},{length:.1f},{speed:.0f},{t:.2f},{hw}\n")
-    with open(os.path.join(a.out, "facilities.csv"), "w") as f:
+    with open(os.path.join(a.out, "facilities.csv"), "w", encoding="utf-8", newline="\n") as f:
         f.write("kind,name,lat,lon\n")
         for kind, name, lat, lon in facilities:
             f.write(f"{kind},{name},{lat:.7f},{lon:.7f}\n")
