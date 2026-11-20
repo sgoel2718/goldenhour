@@ -7,6 +7,7 @@ Output (consumed by the Java dispatch core):
 Usage:
   python build_road_graph.py --pbf data/raw/andorra.osm.pbf --out data/city      # any .osm.pbf extract (e.g. Geofabrik)
   python build_road_graph.py --place "Chennai, India" --out data/chennai          # needs internet + `pip install osmnx`
+  python build_road_graph.py --point 13.05,80.24 --dist 6000 --speed-factor 0.6 --out data/chennai
 
 Design notes
   * Only drivable highway classes are kept; `oneway` is respected (ambulances obey one-way streets
@@ -99,10 +100,10 @@ def from_pbf(path: str):
     return coords, edges, facilities
 
 
-def from_place(place: str):
+def from_place(place: str | None, point: tuple | None = None, dist: int = 6000):
     import osmnx as ox
 
-    g = ox.graph_from_place(place, network_type="drive")
+    g = ox.graph_from_point(point, dist=dist, network_type="drive") if point else ox.graph_from_place(place, network_type="drive")
     coords = {n: (d["y"], d["x"]) for n, d in g.nodes(data=True)}
     edges = []
     for u, v, d in g.edges(data=True):
@@ -113,7 +114,8 @@ def from_place(place: str):
         edges.append((u, v, float(d["length"]), parse_speed(ms, hw), hw))
     facilities = []
     try:
-        feats = ox.features_from_place(place, {"amenity": ["hospital", "clinic", "fire_station"], "emergency": "ambulance_station"})
+        tags = {"amenity": ["hospital", "clinic", "fire_station"], "emergency": "ambulance_station"}
+        feats = ox.features_from_point(point, tags, dist=dist) if point else ox.features_from_place(place, tags)
         for _, f in feats.iterrows():
             c = f.geometry.centroid
             facilities.append((f.get("amenity") or f.get("emergency"), str(f.get("name") or "facility").replace(",", " "), c.y, c.x))
@@ -162,9 +164,19 @@ def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--pbf"); src.add_argument("--place")
+    src.add_argument("--point", help="lat,lon centre, e.g. 13.0500,80.2400 (Chennai)")
+    ap.add_argument("--dist", type=int, default=6000, help="radius in metres with --point")
+    ap.add_argument("--speed-factor", type=float, default=1.0,
+                    help="scale free-flow speeds for congestion, e.g. 0.6 for dense Indian city traffic")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    coords, edges, facilities = from_pbf(a.pbf) if a.pbf else from_place(a.place)
+    if a.pbf:
+        coords, edges, facilities = from_pbf(a.pbf)
+    else:
+        pt = tuple(float(x) for x in a.point.split(",")) if a.point else None
+        coords, edges, facilities = from_place(a.place, pt, a.dist)
+    if a.speed_factor != 1.0:
+        edges = [(u, v, length, speed * a.speed_factor, hw) for u, v, length, speed, hw in edges]
     used = {x for e in edges for x in e[:2]}
     keep = largest_scc(used, edges)
     ids = {osm: i for i, osm in enumerate(sorted(keep))}
