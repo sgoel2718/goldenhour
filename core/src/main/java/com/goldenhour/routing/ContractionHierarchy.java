@@ -66,6 +66,20 @@ public final class ContractionHierarchy implements Router {
     @Override public String name() { return "contraction-hierarchies"; }
     public int shortcutCount() { return shortcuts; }
 
+    /**
+     * The preprocessed hierarchy as plain arrays (rank + every edge incl. shortcuts with their two child edges),
+     * so it can be built once offline and queried elsewhere — e.g. by the browser edition of the dashboard.
+     */
+    public java.util.Map<String, Object> export() {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("rank", rank.clone());
+        m.put("from", Arrays.copyOf(eFrom, this.m)); m.put("to", Arrays.copyOf(eTo, this.m));
+        double[] w = Arrays.copyOf(eW, this.m);
+        m.put("w", w);
+        m.put("a", Arrays.copyOf(eChildA, this.m)); m.put("b", Arrays.copyOf(eChildB, this.m));
+        return m;
+    }
+
     private int addEdge(int u, int x, double w, int a, int b, IntList[] out, IntList[] in) {
         if (m == eFrom.length) {
             int c = m * 2;

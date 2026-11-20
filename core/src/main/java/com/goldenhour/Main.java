@@ -25,6 +25,7 @@ public final class Main {
             }
             case "simulate" -> com.goldenhour.sim.Experiments.main(rest);
             case "bench" -> Benchmark.main(rest);
+            case "export-static" -> com.goldenhour.tools.ExportStatic.main(rest);
             default -> { System.err.println("usage: serve | simulate [dir amb scale weeks seeds] | bench [dir]"); System.exit(2); }
         }
     }

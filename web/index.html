@@ -68,7 +68,7 @@ tr.win td{color:var(--avail);font-weight:600}
 </head>
 <body>
 <header>
-  <div class="brand"><span class="dot"></span>GoldenHour <small>real-time ambulance dispatch · Andorra road network</small></div>
+  <div class="brand"><span class="dot"></span>GoldenHour <small>real-time ambulance dispatch · Andorra road network · <span id="modeTag">Java server</span> · <a href="https://github.com/sgoel2718/goldenhour" target="_blank" rel="noopener" style="color:inherit">GitHub</a></small></div>
   <nav><button data-tab="live" class="on">Live dispatch</button><button data-tab="lab">Routing lab</button><button data-tab="results">Results</button></nav>
   <div class="kpis">
     <div class="kpi"><b id="k-clock">—</b><span>sim clock</span></div>
@@ -123,6 +123,7 @@ tr.win td{color:var(--avail);font-weight:600}
 <section id="results"><div class="grid" id="resultsGrid"><div class="card">Loading…</div></div></section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="engine.js"></script>
 <script>
 const API = '';
 const $ = id => document.getElementById(id);
@@ -137,7 +138,20 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {ma
 const layers = {demand:L.layerGroup().addTo(map), routes:L.layerGroup().addTo(map), bases:L.layerGroup(), hosp:L.layerGroup().addTo(map), inc:L.layerGroup().addTo(map), amb:L.layerGroup().addTo(map), lab:L.layerGroup().addTo(map), pick:L.layerGroup().addTo(map)};
 let tab = 'live', picked = null, labPts = [], lastState = null;
 
-fetch(API + '/api/v1/info').then(r => r.json()).then(i => map.fitBounds(i.bounds, {padding:[10,10]}));
+let MODE = 'server';
+// Same dashboard, two back ends: the Java server if one is there, otherwise the in-browser engine (static hosting).
+async function call(method, path, body) {
+  if (MODE === 'browser') { const [status, json] = await GH.api(method, path, body); return {status, ok: status < 300, json}; }
+  const r = await fetch(API + path, {method, headers: {'Content-Type':'application/json', ...(method === 'POST' && path.endsWith('incidents') ? {'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Math.random())} : {})}, body: body ? JSON.stringify(body) : undefined});
+  return {status: r.status, ok: r.ok, json: await r.json()};
+}
+async function boot() {
+  try { const r = await fetch(API + '/api/v1/info'); if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw 0; }
+  catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = 'Click the map to set the caller\'s location.'; $('modeTag').textContent = 'browser edition · no server'; }
+  const i = (await call('GET', '/api/v1/info')).json;
+  map.fitBounds(i.bounds, {padding:[10,10]});
+  setInterval(poll, 1000); poll();
+}
 
 // ---------------------------------------------------------------- tabs
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
@@ -174,9 +188,8 @@ $('send').onclick = async () => {
   const c = picked || map.getCenter();
   const btn = $('send'); btn.disabled = true;
   try {
-    const r = await fetch(API + '/api/v1/incidents', {method:'POST', headers:{'Content-Type':'application/json', 'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Math.random())},
-      body: JSON.stringify({lat:c.lat, lon:c.lng, notes:$('notes').value})});
-    const d = await r.json();
+    const r = await call('POST', '/api/v1/incidents', {lat:c.lat, lon:c.lng, notes:$('notes').value});
+    const d = r.json;
     if (r.status === 429) { showDecision(`<div class="hint">Rate limited — try again in a second.</div>`); return; }
     if (!r.ok) { showDecision(`<div class="hint">${esc(d.error || 'error')}</div>`); return; }
     renderDecision(d);
@@ -206,13 +219,13 @@ function renderDecision(d) {
 
 $('auto').onclick = async () => {
   const on = !(lastState && lastState.autoCalls);
-  await fetch(API + '/api/v1/sim', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({autoCalls:on})});
+  await call('POST', '/api/v1/sim', {autoCalls:on});
 };
 
 // ---------------------------------------------------------------- live state
 let demandLoaded = false;
 async function loadDemand() {
-  const d = await (await fetch(API + '/api/v1/demand')).json();
+  const d = (await call('GET', '/api/v1/demand')).json;
   layers.demand.clearLayers();
   const max = Math.max(...d.zones.map(z => z.perWeek));
   d.zones.forEach(z => L.circle([z.lat, z.lon], {radius: 150 + 600 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.06 + .22 * z.perWeek / max, bubblingMouseEvents:true})
@@ -228,7 +241,7 @@ function ambIcon(a) {
 
 async function poll() {
   try {
-    const s = await (await fetch(API + '/api/v1/state')).json();
+    const s = (await call('GET', '/api/v1/state')).json;
     lastState = s;
     $('k-clock').textContent = s.clock;
     $('k-calls').textContent = s.stats.calls;
@@ -265,7 +278,7 @@ async function poll() {
     if (!demandLoaded) loadDemand();
   } catch (e) { /* server restarting: keep polling */ }
 }
-setInterval(poll, 1000); poll();
+boot();
 ['l-demand','l-routes','l-bases'].forEach(id => $(id).onchange = () => {
   const lyr = {['l-demand']:layers.demand, ['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
   $(id).checked ? lyr.addTo(map) : map.removeLayer(lyr);
@@ -276,7 +289,7 @@ $('labReset').onclick = () => { labPts = []; layers.lab.clearLayers(); $('labOut
 async function runLab() {
   const [a, b] = labPts, q = `from=${a.lat},${a.lng}&to=${b.lat},${b.lng}`;
   const rows = [];
-  for (const algo of ['dijkstra', 'astar', 'bidi', 'ch']) rows.push(await (await fetch(`${API}/api/v1/route?${q}&algo=${algo}`)).json());
+  for (const algo of ['dijkstra', 'astar', 'bidi', 'ch']) rows.push((await call('GET', `/api/v1/route?${q}&algo=${algo}`)).json);
   const ch = rows[3];
   if (ch.path.length) L.polyline(ch.path, {color:css('--accent'), weight:5}).addTo(layers.lab);
   const base = rows[0].settledNodes;
@@ -307,7 +320,7 @@ function mdTable(md) {
 }
 
 async function loadResults() {
-  const r = await (await fetch(API + '/api/v1/reports')).json();
+  const r = (await call('GET', '/api/v1/reports')).json;
   const f = r.forecast;
   let fc = '';
   if (f) {

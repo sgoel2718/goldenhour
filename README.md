@@ -102,6 +102,8 @@ docker compose up --build                           # → http://localhost:8080
 scripts/reproduce.sh
 ```
 
+**No server? No problem.** `scripts/build_static.sh` exports the road graph and the contraction hierarchy (preprocessed by the Java core) into `web/data/`. The same dashboard then runs entirely in the browser (`web/engine.js` ports the CH query, dispatch and live fleet logic). That is how the free static demo is hosted. In the browser, all four routers return identical answers on 200 random queries.
+
 **Dashboard:** click the map and describe the emergency. You see the triage result, every candidate unit with its straight-line distance next to its road ETA, and the chosen route. Ambulances then drive their routes live on the map at 60× speed. The **Routing lab** tab runs one query through all four algorithms side by side. The **Results** tab shows every table above.
 
 **API**
@@ -130,7 +132,7 @@ GH_DATA=data/pune java -jar core/out/goldenhour.jar serve
 ```
 core/      Java 21, zero dependencies: graph, routing, ds, dispatch, sim, infra, api (24 tests)
 ml/        data_prep (OSM → graph) · forecast (911 → model → demand) · triage (rules + LLM) · service (FastAPI)
-web/       single-page Leaflet dashboard
+web/       Leaflet dashboard; engine.js = in-browser edition (serverless demo)
 reports/   generated results: simulation.md, benchmarks.md, forecast_metrics.json, triage_eval.json
 docs/      DESIGN.md · MODEL_CARD.md · INTERVIEW.md
 ```
