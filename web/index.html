@@ -62,7 +62,14 @@ tr.win td{color:var(--avail);font-weight:600}
 .big{font:700 34px/1 "JetBrains Mono",monospace;color:var(--accent)}
 .amb-icon{border-radius:6px;border:2px solid #0b0f14;color:#0b0f14;font:700 10px/16px "JetBrains Mono",monospace;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.6)}
 .leaflet-container{font:inherit}
-.dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
+.live{margin:10px 0;padding:10px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.live .now{font-weight:600;font-size:14px}
+.live .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0 4px}
+.live .steps span{flex:1;height:6px;border-radius:3px;background:var(--line)}
+.live .steps span.on{background:var(--accent)}
+.live .labels{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;font-size:10px;line-height:1.2;color:var(--muted)}
+.why{color:var(--ink2);font-size:13px;margin:6px 0}
+.dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
 .leaflet-popup-content{font-size:12px}
 @media (max-width:900px){main{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}aside{border-left:0;border-top:1px solid var(--line)}#map{height:55vh}.kpis{gap:12px}}
@@ -209,7 +216,11 @@ function renderDecision(d) {
   const nearestSL = d.candidates.length ? d.candidates.reduce((m, c) => c.straightLineKm < m.straightLineKm ? c : m) : null;
   let html = `<div class="row" style="flex-wrap:wrap"><span class="sev ${t.severity}">${t.severity.replace('_',' ')}</span> <b>${esc(t.category)}</b>
     <span class="hint">needs ${esc(t.need)} · triage by ${esc(t.source)} in ${fmt(t.ms,1)} ms</span></div>`;
+  tracked = {id: d.incident.id, amb: a ? a.ambulance : null, hospital: a ? a.hospital : null, done: false};
+  html += `<div id="live" class="live"></div>`;
   if (a) {
+    const slow = d.candidates.filter(c => c.ambulance !== best && c.straightLineKm < d.candidates.find(x => x.ambulance === best).straightLineKm);
+    html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. The patient goes to <b>${esc(a.hospital)}</b> because it is the nearest hospital that treats <b>${esc(t.need.toLowerCase())}</b> cases.</p>`;
     html += `<p style="margin:8px 0"><b>AMB-${a.ambulance}</b> (${a.unit}) dispatched · ETA <b>${fmt(a.etaMin)} min</b> → ${esc(a.hospital)} (+${fmt(a.transportMin)} min) · decided in ${fmt(d.dispatchMs,2)} ms</p>`;
     if (a.path && a.path.length) { const pl = L.polyline(a.path, {color:css('--accent'), weight:5, opacity:.9}).addTo(layers.routes); setTimeout(() => layers.routes.removeLayer(pl), 6000); }
   } else html += `<p style="margin:8px 0">No unit free — queued by severity, then arrival time.</p>`;
@@ -226,6 +237,30 @@ $('auto').onclick = async () => {
   const on = !(lastState && lastState.autoCalls);
   await call('POST', '/api/v1/sim', {autoCalls:on});
 };
+
+// ---------------------------------------------------------------- live tracking of the call you reported
+let tracked = null;
+const STEPS = ['Dispatched', 'Driving to patient', 'Treating on scene', 'To hospital', 'Handover'];
+function updateLive(s) {
+  const box = $('live');
+  if (!tracked || !box) return;
+  const inc = s.incidents.find(i => i.id === tracked.id);
+  const amb = s.ambulances.find(a => a.incident === tracked.id && a.phase !== 'RETURNING');
+  const left = x => `${fmt(x.secondsLeft / 60)} min`;
+  let step = 0, now;
+  if (amb) {
+    const map = {EN_ROUTE: [1, `🚑 AMB-${amb.id} is driving to the patient: arrives in ${left(amb)}`],
+                 ON_SCENE: [2, `🩺 Paramedics are treating the patient: leaving in ${left(amb)}`],
+                 TRANSPORTING: [3, `🏥 Taking the patient to ${esc(tracked.hospital)}: ${left(amb)} to go`],
+                 HANDOVER: [4, `Handing the patient over to the hospital team: ${left(amb)}`]};
+    [step, now] = map[amb.phase] || [0, amb.phase];
+  } else if (inc && inc.ambulance == null) { now = `⏳ Every ambulance is busy, so the call is queued by priority (${s.stats.waiting} waiting)`; }
+  else if (inc && inc.responseMin != null) { step = 5; now = `✅ Done. The ambulance reached the patient in ${fmt(inc.responseMin)} min and is returning to base.`; }
+  else { step = 5; now = '✅ Done.'; }
+  const resp = inc && inc.responseMin != null ? `<div class="hint">Response time: <b>${fmt(inc.responseMin)} min</b> ${inc.responseMin <= 8 ? '(within the 8-min target ✓)' : '(over the 8-min target)'}</div>` : '';
+  box.innerHTML = `<div class="now">${now}</div><div class="steps">${STEPS.map((_, i) => `<span class="${i < step || step === 5 ? 'on' : ''}"></span>`).join('')}</div>
+    <div class="labels">${STEPS.map(x => `<span>${x}</span>`).join('')}</div>${resp}<div class="hint" style="margin-top:4px">Simulated clock ${esc(s.clock)} · time runs ${s.speed}× faster (1 real second = 1 minute)</div>`;
+}
 
 // ---------------------------------------------------------------- live state
 let demandLoaded = false;
@@ -280,6 +315,7 @@ async function poll() {
         .bindTooltip(`<b>${i.id}</b> ${i.severity}<br>${esc(i.category)}<br><i>${esc(i.notes)}</i><br>${i.responseMin != null ? 'response ' + fmt(i.responseMin) + ' min' : i.ambulance == null ? 'waiting for a unit' : 'unit en route'}`).addTo(layers.inc);
     });
     $('log').innerHTML = s.events.map(e => `<div>${esc(e.text)}</div>`).join('');
+    updateLive(s);
     if (!demandLoaded) loadDemand();
   } catch (e) { /* server restarting: keep polling */ }
 }
