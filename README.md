@@ -4,7 +4,7 @@
 
 > For cardiac arrest, survival falls by roughly 7–10% for every minute without CPR or defibrillation. Major trauma has a "golden hour". Most ambulance response time is not spent driving. It is lost by sending the wrong unit, or by having crews waiting in the wrong place.
 
-**Live demo:** _Hugging Face Space (link added after deploy)_ · **Design doc:** [docs/DESIGN.md](docs/DESIGN.md) · **Model card:** [docs/MODEL_CARD.md](docs/MODEL_CARD.md)
+**Live demo:** [huggingface.co/spaces/Shubham2019/goldenhour](https://huggingface.co/spaces/Shubham2019/goldenhour) (runs entirely in your browser) · **Design doc:** [docs/DESIGN.md](docs/DESIGN.md) · **Model card:** [docs/MODEL_CARD.md](docs/MODEL_CARD.md)
 
 | | |
 |---|---|
