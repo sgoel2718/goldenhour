@@ -32,7 +32,8 @@ public final class Benchmark {
         Path out = Path.of(args.length > 1 ? args[1] : "reports/benchmarks.md");
         RoadGraph g = RoadGraph.load(dir);
         List<String> md = new ArrayList<>();
-        md.add("# Benchmarks\n");
+        String city = Files.exists(dir.resolve("name.txt")) ? Files.readString(dir.resolve("name.txt")).trim() : dir.getFileName().toString();
+        md.add("# Benchmarks — " + city + "\n");
         md.add(String.format("Road graph: %,d nodes, %,d directed edges. JDK %s, %d cores. 2,000 random origin–destination pairs, after 500 warm-up queries.%n",
             g.nodeCount(), g.edgeCount(), Runtime.version().feature(), Runtime.getRuntime().availableProcessors()));
         long t0 = System.nanoTime();

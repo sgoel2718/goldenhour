@@ -107,6 +107,8 @@ def from_place(place: str | None, point: tuple | None = None, dist: int = 6000):
     coords = {n: (d["y"], d["x"]) for n, d in g.nodes(data=True)}
     edges = []
     for u, v, d in g.edges(data=True):
+        if u == v:                      # OSM self-loops (cul-de-sac rings) add nothing and break naive contraction
+            continue
         hw = d.get("highway", "road")
         hw = hw[0] if isinstance(hw, list) else hw
         ms = d.get("maxspeed")

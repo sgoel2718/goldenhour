@@ -219,7 +219,7 @@ public final class Server {
 
     private Map<String, Object> info() {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("nodes", g.nodeCount()); m.put("edges", g.edgeCount()); m.put("chBuildSeconds", chBuildSeconds);
+        m.put("city", scenario.name); m.put("nodes", g.nodeCount()); m.put("edges", g.edgeCount()); m.put("chBuildSeconds", chBuildSeconds);
         m.put("zones", scenario.zones.size()); m.put("hospitals", engine.hospitals().size()); m.put("ambulances", engine.ambulances().size());
         m.put("walEventsReplayed", replayed); m.put("walEventsAppended", wal.appended()); m.put("speed", fleet.speed());
         double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;

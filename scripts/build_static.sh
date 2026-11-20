@@ -4,6 +4,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ -f core/out/goldenhour.jar ]] || core/build.sh --skip-tests
-java -jar core/out/goldenhour.jar export-static data/city web/data/city.json 8 3
+java -jar core/out/goldenhour.jar export-static data/chennai web/data/city.json 20 0.35
 cp reports/simulation.md reports/benchmarks.md reports/forecast_metrics.json web/data/
 ls -lh web/data

@@ -1,6 +1,6 @@
 # 🚑 GoldenHour: real-time ambulance dispatch and pre-positioning
 
-**In a simulation on a real road network, with the same 8 ambulances, GoldenHour reaches 78% of life-threatening calls within 8 minutes. The common status quo reaches 32%.** It does this with three things: a demand forecast trained on real 911 calls, an optimiser that decides where idle crews wait, and dispatch based on actual road travel time computed with contraction hierarchies.
+**On the real road network of central Chennai (21,336 junctions, OpenStreetMap), GoldenHour reaches 79% of life-threatening calls within 8 minutes with 20 ambulances. Crews waiting at hospitals and dispatched by straight-line distance reach 37%.** It does this with three things: dispatch based on actual road travel time computed with contraction hierarchies, an optimiser that decides where idle crews wait, and a demand forecast trained on real 911 calls. The same code runs on a second city (Andorra's mountain roads) to show what transfers and what doesn't.
 
 > For cardiac arrest, survival falls by roughly 7–10% for every minute without CPR or defibrillation. Major trauma has a "golden hour". Most ambulance response time is not spent driving. It is lost by sending the wrong unit, or by having crews waiting in the wrong place.
 
@@ -8,10 +8,10 @@
 
 | | |
 |---|---|
-| **DSA** | Contraction hierarchies (33× faster than Dijkstra, exact). A*, bidirectional Dijkstra, k-d tree, moving-object spatial grid, indexed heap with decrease-key, Hungarian algorithm, lazy-greedy submodular optimisation, iterative Tarjan SCC, LRU, token bucket, consistent hashing. All hand-written in Java with no dependencies, and each is tested against a brute-force oracle. |
+| **DSA** | Contraction hierarchies (43× faster than Dijkstra on Chennai, exact). A*, bidirectional Dijkstra, k-d tree, moving-object spatial grid, indexed heap with decrease-key, Hungarian algorithm, lazy-greedy submodular optimisation, iterative Tarjan SCC, LRU, token bucket, consistent hashing. All hand-written in Java with no dependencies, and each is tested against a brute-force oracle. |
 | **System design** | Single-writer dispatch shards routed by consistent hashing. Write-ahead log, idempotency keys, a circuit breaker around the ML call, rate limiting, Prometheus metrics. Detailed in [DESIGN.md](docs/DESIGN.md): capacity estimates, failure modes, trade-offs. |
 | **ML / AI** | LightGBM Poisson demand forecasting on **48,812 real EMS calls**, evaluated honestly against baselines on a 4-week holdout. A statistical test of whether the spatial pattern of calls changes by shift. LLM triage via tool-calling with a strict schema, falling back to deterministic rules. |
-| **Evidence** | A discrete-event simulator compares policies on identical call streams (common random numbers), reporting paired 95% confidence intervals. 24 Java tests and 7 Python tests run in CI. |
+| **Evidence** | A discrete-event simulator compares policies on identical call streams (common random numbers), reporting paired 95% confidence intervals. 25 Java tests and 7 Python tests run in CI. |
 
 ---
 
@@ -19,18 +19,33 @@
 
 ### 1. Same fleet, better decisions (simulation, 10 seeds × 12 weeks per arm)
 
+**Chennai** (main demo). 20 ambulances, 162 demand zones, 14 major hospitals with stroke, cardiac, trauma, burns and maternity capabilities, and road speeds reduced 40% for traffic. [Full table](reports/simulation.md).
+
 | Configuration | P1 median response | **P1 reached ≤ 8 min** | Δ vs previous step (95% CI) |
 |---|---:|---:|---:|
-| Status quo: crews wait at hospitals, nearest unit by straight line | 11.6 min | **32.0%** | — |
-| + coverage-optimised bases (MEXCLP, uniform demand) | 5.6 min | **71.3%** | +39.2 pp (+37.8 … +40.7) |
-| + dispatch by real road ETA (contraction hierarchies) | 5.6 min | **74.9%** | +3.6 pp (+2.9 … +4.4) |
-| + bases weighted by the demand forecast | 5.2 min | **78.1%** | +3.2 pp (+2.1 … +4.2) |
-| _alt:_ re-optimise bases every 8 h shift | 5.5 min | 76.2% | **−1.9 pp** (−2.9 … −0.8) |
-| _alt:_ dynamic move-up of idle units | 5.5 min | 78.1% | +0.1 pp (not significant) |
+| Status quo: crews wait at hospitals, nearest unit by straight line | 10.1 min | **36.8%** | — |
+| + coverage-optimised bases (MEXCLP, uniform demand) | 6.6 min | **68.5%** | +31.7 pp (+30.7 … +32.8) |
+| + dispatch by real road ETA (contraction hierarchies) | 6.1 min | **79.2%** | **+10.7 pp** (+10.2 … +11.1) |
+| + bases weighted by the demand forecast | 6.3 min | 78.9% | −0.2 pp (not significant) |
+| _alt:_ re-optimise bases every 8 h shift | 6.3 min | 78.1% | −0.8 pp (not significant) |
+| _alt:_ dynamic move-up of idle units | 6.2 min | 79.6% | +0.7 pp (not significant) |
 
-**Fleet sizing:** the optimised system with **5** ambulances (56.9%) outperforms the status quo with **10** (36.1%). Full tables are in [reports/simulation.md](reports/simulation.md).
+**Fleet sizing:** 13 optimised ambulances (54.5%) outperform 25 under the status quo (41.8%).
 
-**Two negative results that shaped the design.** Re-positioning crews every shift made outcomes *worse*, and continuous move-up gave no measurable gain. The forecasting work below explains why: *where* emergencies happen barely changes during the day, so moving crews around only costs time spent driving. I kept the simpler policy.
+**Andorra** (mountain roads, 8 ambulances). [Full table](reports/simulation_andorra.md).
+
+| Configuration | **P1 reached ≤ 8 min** | Δ vs previous step (95% CI) |
+|---|---:|---:|
+| Status quo | **32.0%** | — |
+| + coverage-optimised bases | **71.3%** | +39.2 pp (+37.8 … +40.7) |
+| + road-network ETA dispatch | **74.9%** | +3.6 pp (+2.9 … +4.4) |
+| + forecast-weighted bases | **78.1%** | **+3.2 pp** (+2.1 … +4.2) |
+| _alt:_ re-optimise every shift | 76.2% | −1.9 pp (−2.9 … −0.8) |
+
+**What the two cities teach:**
+- **Road-ETA dispatch matters three times more in Chennai** (+10.7 pp against +3.6 pp). A dense grid of one-way streets, flyovers and the Adyar and Cooum rivers makes "nearest by straight line" wrong far more often than open valley roads do.
+- **The demand forecast only pays off where demand is concentrated.** Andorra's people live in a few valley towns, so forecast weighting adds +3.2 pp. Central Chennai is uniformly dense (no zone above 1.3% of calls), so a uniform placement is already near-optimal, and the forecast adds nothing measurable. Knowing *when* an ML component is worth deploying is part of the design.
+- **Re-positioning every shift never helped**, in either city. The forecasting analysis below explains why.
 
 ### 2. Demand forecasting on real 911 data (Montgomery County, PA; holdout = last 4 weeks)
 
@@ -43,16 +58,18 @@
 
 **Finding:** gradient boosting does not beat a separable model. At the level of one zone in one hour, calls are close to pure Poisson noise: the oracle that already knows the top 5 zones only captures 32%. So the planner uses the separable model, which is simpler, easy to explain, and the reason the model *transfers to a new city*. A spatial-stability test (total variation distance by shift compared with bootstrap noise) shows that only about 0.4–1.5% of call volume moves between shifts. That matches the negative simulation result above.
 
-### 3. Performance on the real road graph (16,411 nodes, 2,000 random queries)
+### 3. Performance on the real road graph (2,000 random queries, after warm-up)
 
-| Router | p50 | p99 | Nodes settled |
-|---|---:|---:|---:|
-| Dijkstra | 480 µs | 959 µs | 7,942 |
-| A* (haversine / max-speed heuristic) | 620 µs | 1,989 µs | 5,517 |
-| Bidirectional Dijkstra | 368 µs | 813 µs | 5,194 |
-| **Contraction hierarchies** | **14 µs** | **57 µs** | **28** |
+| Router | Chennai p50 | Chennai p99 | Nodes settled | Andorra p50 |
+|---|---:|---:|---:|---:|
+| Dijkstra | 1,126 µs | 2,240 µs | 10,837 | 480 µs |
+| A* (haversine / max-speed heuristic) | 1,140 µs | 3,629 µs | 7,285 | 620 µs |
+| Bidirectional Dijkstra | 674 µs | 1,911 µs | 5,911 | 368 µs |
+| **Contraction hierarchies** | **26 µs** | **76 µs** | **133** | **14 µs** |
 
-A full dispatch decision (snap the location, filter to the k nearest units, compute 8 exact road ETAs, apply the ALS rule, choose a hospital) takes **p50 67 µs and p99 377 µs**, about 7,000 decisions per second on one core. A* is *slower* than plain Dijkstra here, even though it settles fewer nodes. The heuristic has to be admissible for 90 km/h motorways, which makes it too weak on slow mountain roads, and the cost of computing it outweighs the savings.
+Preprocessing the hierarchy takes **0.7 s** for Chennai. A full dispatch decision (snap the location, filter to the k nearest units, compute 8 exact road ETAs, apply the ALS rule, choose a hospital) takes **p50 108 µs and p99 386 µs**, about 6,500 decisions per second on one core. A* settles fewer nodes but is no faster. Its heuristic has to stay admissible for the fastest road, which makes it weak on slow city streets, and computing it costs time.
+
+**A bug the real data found:** OpenStreetMap's Chennai extract contains self-loop edges. Contracting a node with a self-loop added a shortcut to the very list being iterated, so preprocessing never finished. The fix is a one-line guard, and a regression test now covers it.
 
 ### 4. Triage
 
@@ -89,11 +106,11 @@ flowchart LR
 ## Try it
 
 ```bash
-# Java 21 only: builds, runs 24 tests, packages the jar (no Maven download)
+# Java 21 only: builds, runs 25 tests, packages the jar (no Maven download)
 core/build.sh
-java -jar core/out/goldenhour.jar serve            # → http://localhost:8080
-java -jar core/out/goldenhour.jar simulate          # regenerate reports/simulation.md
-java -jar core/out/goldenhour.jar bench             # regenerate reports/benchmarks.md
+java -jar core/out/goldenhour.jar serve            # → http://localhost:8080 (Chennai; GH_DATA=data/city for Andorra)
+java -jar core/out/goldenhour.jar simulate data/chennai 20 0.35   # regenerate reports/simulation.md
+java -jar core/out/goldenhour.jar bench data/chennai              # regenerate reports/benchmarks.md
 
 # or everything, including the ML sidecar
 docker compose up --build                           # → http://localhost:8080
@@ -116,21 +133,22 @@ GET  /api/v1/state   GET /api/v1/demand   GET /api/v1/reports   GET /metrics   G
 ## Run it on your own city
 
 ```bash
-python ml/data_prep/build_road_graph.py --place "Pune, India" --out data/pune     # needs osmnx
+python ml/data_prep/build_road_graph.py --point 18.52,73.86 --dist 6000 --speed-factor 0.6 --out data/pune   # needs osmnx
 (cd ml/forecast && python transfer.py --city ../../data/pune --population 3100000)
 GH_DATA=data/pune java -jar core/out/goldenhour.jar serve
 ```
 
 ## Data, honestly stated
 
-- **Roads:** the real OpenStreetMap network of Andorra, the extract that GraphHopper uses for its own tests. I keep the largest strongly connected component, so every node can reach every other node.
-- **Calls:** real anonymised 911 calls from Montgomery County, PA ([Kaggle](https://www.kaggle.com/datasets/mchirico/montcoalert)). Those calls happened in Pennsylvania, not Andorra. So the forecasting is *validated* on the real data. What is *transferred* to the demo city is only what generalises: the hour-of-week profile, EMS calls per resident, and the case mix. The spatial distribution of demand in the demo city comes from its own residential street density.
+- **Roads:** real OpenStreetMap networks: central Chennai (a 6 km radius around T. Nagar, built with `build_road_graph.py --point 13.05,80.24 --dist 6000 --speed-factor 0.6`) and Andorra. I keep the largest strongly connected component, so every node can reach every other node. Speeds are scaled by 0.6 in Chennai for traffic, which is an assumption.
+- **Chennai hospitals and demand:** 14 major hospitals with capabilities approximated from public information (verify before any real use). The population of about 1.9 M is an estimate for the area. Per-capita EMS demand is set to 0.35× the US county rate, because Indian per-capita EMS use is lower. That is an assumption, and it is the `volume` parameter.
+- **Calls:** real anonymised 911 calls from Montgomery County, PA ([Kaggle](https://www.kaggle.com/datasets/mchirico/montcoalert)). Those calls happened in Pennsylvania, not in Chennai or Andorra. So the forecasting is *validated* on the real data. What is *transferred* to the demo city is only what generalises: the hour-of-week profile, EMS calls per resident, and the case mix. The spatial distribution of demand in the demo city comes from its own residential street density.
 - **Hospital capabilities** are not tagged in OSM. The hospital closest to the city's demand centroid is treated as the full-service regional hospital. Response-time results are from simulation, not from a field trial.
 
 ## Repository map
 
 ```
-core/      Java 21, zero dependencies: graph, routing, ds, dispatch, sim, infra, api (24 tests)
+core/      Java 21, zero dependencies: graph, routing, ds, dispatch, sim, infra, api, tools (25 tests)
 ml/        data_prep (OSM → graph) · forecast (911 → model → demand) · triage (rules + LLM) · service (FastAPI)
 web/       Leaflet dashboard; engine.js = in-browser edition (serverless demo)
 reports/   generated results: simulation.md, benchmarks.md, forecast_metrics.json, triage_eval.json

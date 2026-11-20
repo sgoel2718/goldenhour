@@ -4,7 +4,7 @@ services:
     build: .
     ports: ["8080:7860"]
     environment:
-      - GH_AMBULANCES=8
+      - GH_AMBULANCES=20
       - GH_SPEED=60
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}    # optional: enables LLM triage; read from your shell, never committed
     volumes:

@@ -7,10 +7,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "21" }
-      - name: Build + 24 tests (routing correctness vs Dijkstra, data structures vs brute force, API end-to-end)
+      - name: Build + 25 tests (routing correctness vs Dijkstra, data structures vs brute force, API end-to-end)
         run: core/build.sh
       - name: Benchmarks
-        run: java -jar core/out/goldenhour.jar bench && cat reports/benchmarks.md >> $GITHUB_STEP_SUMMARY
+        run: java -jar core/out/goldenhour.jar bench data/chennai /tmp/bench.md && cat /tmp/bench.md >> $GITHUB_STEP_SUMMARY
   python:
     runs-on: ubuntu-latest
     steps:
@@ -31,4 +31,4 @@ jobs:
           docker run -d -p 7860:7860 --name gh goldenhour
           for i in $(seq 1 30); do curl -fs localhost:7860/health && break; sleep 2; done
           curl -fs -X POST localhost:7860/api/v1/incidents -H 'Content-Type: application/json' \
-               -d '{"lat":42.507,"lon":1.521,"notes":"not breathing"}' | tee /dev/stderr | grep -q '"ambulance"'
+               -d '{"lat":13.06,"lon":80.25,"notes":"not breathing"}' | tee /dev/stderr | grep -q '"ambulance"'

@@ -3,6 +3,7 @@ FROM eclipse-temurin:21-jdk-jammy AS build
 WORKDIR /app
 COPY core core
 COPY data/city data/city
+COPY data/chennai data/chennai
 RUN core/build.sh
 
 # ---- runtime: Java dispatcher + Python ML sidecar in one small image ----
@@ -13,6 +14,7 @@ COPY ml/requirements-serve.txt ml/requirements-serve.txt
 RUN pip3 install --no-cache-dir -r ml/requirements-serve.txt
 COPY --from=build /app/core/out/goldenhour.jar goldenhour.jar
 COPY data/city data/city
+COPY data/chennai data/chennai
 COPY web web
 COPY reports reports
 COPY ml/service ml/service

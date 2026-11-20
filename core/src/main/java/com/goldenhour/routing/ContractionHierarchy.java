@@ -43,6 +43,8 @@ public final class ContractionHierarchy implements Router {
     private final int[] pf, pb, touchedF, touchedB;
     private int tf, tb;
 
+    private static final boolean DEBUG = Boolean.getBoolean("gh.chDebug");
+
     public ContractionHierarchy(RoadGraph g) { this(g, 60); }
 
     public ContractionHierarchy(RoadGraph g, int witnessSettleLimit) {
@@ -53,7 +55,8 @@ public final class ContractionHierarchy implements Router {
         IntList[] out = new IntList[n], in = new IntList[n];
         for (int v = 0; v < n; v++) { out[v] = new IntList(); in[v] = new IntList(); }
         for (int u = 0; u < n; u++)
-            for (int e = g.outBegin(u); e < g.outEnd(u); e++) addEdge(u, g.outTarget(e), g.outWeight(e), -1, -1, out, in);
+            for (int e = g.outBegin(u); e < g.outEnd(u); e++)
+                if (g.outTarget(e) != u) addEdge(u, g.outTarget(e), g.outWeight(e), -1, -1, out, in);   // self-loops never lie on a shortest path
         rank = new int[n];
         shortcuts = contractAll(out, in, witnessSettleLimit);
         buildUpwardGraph();
@@ -99,12 +102,13 @@ public final class ContractionHierarchy implements Router {
         Witness w = new Witness(n);
         IndexedMinHeap order = new IndexedMinHeap(n);
         for (int v = 0; v < n; v++) order.pushOrDecrease(v, importance(v, out, in, done, deleted, level, w, limit));
-        int next = 0, added = 0;
+        int next = 0, added = 0; long lazy = 0;
         while (!order.isEmpty()) {
             int v = order.pop();
             double imp = importance(v, out, in, done, deleted, level, w, limit);
-            if (!order.isEmpty() && imp > order.peekKey()) { order.pushOrDecrease(v, imp); continue; } // lazy update
+            if (!order.isEmpty() && imp > order.peekKey()) { order.pushOrDecrease(v, imp); lazy++; continue; } // lazy update
             added += contract(v, out, in, done, w, limit, false);
+            if (DEBUG && next % 1000 == 0) System.err.printf("contracted %d, shortcuts %d, deg(v) %d/%d, lazy %d%n", next, added, out[v].size, in[v].size, lazy);
             done[v] = true;
             rank[v] = next++;
             for (int i = 0; i < out[v].size; i++) { int x = eTo[out[v].get(i)]; if (!done[x]) { deleted[x]++; level[x] = Math.max(level[x], level[v] + 1); } }

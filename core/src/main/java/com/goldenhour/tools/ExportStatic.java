@@ -23,10 +23,10 @@ import java.util.Map;
  */
 public final class ExportStatic {
     public static void main(String[] args) throws Exception {
-        Path dir = Path.of(args.length > 0 ? args[0] : "data/city");
+        Path dir = Path.of(args.length > 0 ? args[0] : "data/chennai");
         Path out = Path.of(args.length > 1 ? args[1] : "web/data/city.json");
-        int amb = args.length > 2 ? Integer.parseInt(args[2]) : 8;
-        double volume = args.length > 3 ? Double.parseDouble(args[3]) : 3;
+        int amb = args.length > 2 ? Integer.parseInt(args[2]) : 20;
+        double volume = args.length > 3 ? Double.parseDouble(args[3]) : 0.35;
         RoadGraph g = RoadGraph.load(dir);
         ContractionHierarchy ch = new ContractionHierarchy(g);
         DispatchEngine engine = new DispatchEngine(g, ch);
@@ -56,7 +56,7 @@ public final class ExportStatic {
         List<Object> cm = new ArrayList<>();
         for (Scenario.CaseType c : sc.caseMix) cm.add(Map.of("category", c.category(), "severity", c.severity(), "need", c.need(), "share", c.share()));
         m.put("caseMix", cm);
-        m.put("volume", volume);
+        m.put("volume", volume); m.put("city", sc.name); m.put("tz", sc.timeZone);
         m.put("shortcuts", ch.shortcutCount());
         Files.createDirectories(out.toAbsolutePath().getParent());
         Files.writeString(out, Json.write(m));

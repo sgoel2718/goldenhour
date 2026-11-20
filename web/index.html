@@ -77,7 +77,7 @@ tr.win td{color:var(--avail);font-weight:600}
 </head>
 <body>
 <header>
-  <div class="brand"><span class="dot"></span>GoldenHour <small>real-time ambulance dispatch · Andorra road network · <span id="modeTag">Java server</span> · <a href="https://github.com/sgoel2718/goldenhour" target="_blank" rel="noopener" style="color:inherit">GitHub</a></small></div>
+  <div class="brand"><span class="dot"></span>GoldenHour <small>real-time ambulance dispatch · <span id="cityTag">real</span> road network · <span id="modeTag">Java server</span> · <a href="https://github.com/sgoel2718/goldenhour" target="_blank" rel="noopener" style="color:inherit">GitHub</a></small></div>
   <nav><button data-tab="live" class="on">Live dispatch</button><button data-tab="lab">Routing lab</button><button data-tab="results">Results</button></nav>
   <div class="kpis">
     <div class="kpi"><b id="k-clock">—</b><span>sim clock</span></div>
@@ -159,6 +159,7 @@ async function boot() {
   try { const r = await fetch(API + '/api/v1/info'); if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw 0; }
   catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = 'Click the map to set the caller\'s location.'; $('modeTag').textContent = 'browser edition · no server'; }
   const i = (await call('GET', '/api/v1/info')).json;
+  if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
   // the page may be inside an iframe (Hugging Face) that is sized after load: re-measure before fitting
   const fit = () => { map.invalidateSize(); map.fitBounds(i.bounds, {padding:[10,10]}); };
   fit(); setTimeout(fit, 400); setTimeout(fit, 1500);
@@ -228,7 +229,7 @@ function renderDecision(d) {
     html += `<table><tr><th>Unit</th><th class="num">straight line</th><th class="num">road ETA</th></tr>` +
       [...d.candidates].sort((x,y) => x.roadEtaMin - y.roadEtaMin).map(c => `<tr class="${c.ambulance===best?'win':''}"><td>AMB-${c.ambulance}${c.ambulance===best?' ✓':''}</td><td class="num">${fmt(c.straightLineKm,2)} km</td><td class="num">${fmt(c.roadEtaMin)} min</td></tr>`).join('') + `</table>`;
     if (nearestSL && best != null && nearestSL.ambulance !== best)
-      html += `<p class="hint">The straight-line nearest unit (AMB-${nearestSL.ambulance}) would have taken ${fmt(nearestSL.roadEtaMin)} min — mountain roads make "closest" misleading.</p>`;
+      html += `<p class="hint">The straight-line nearest unit (AMB-${nearestSL.ambulance}) would have taken ${fmt(nearestSL.roadEtaMin)} min — one-way streets, rivers and road layout make "closest" misleading.</p>`;
   }
   showDecision(html);
 }
@@ -268,7 +269,7 @@ async function loadDemand() {
   const d = (await call('GET', '/api/v1/demand')).json;
   layers.demand.clearLayers();
   const max = Math.max(...d.zones.map(z => z.perWeek));
-  d.zones.forEach(z => L.circle([z.lat, z.lon], {radius: 150 + 600 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.06 + .22 * z.perWeek / max, bubblingMouseEvents:true})
+  d.zones.forEach(z => L.circle([z.lat, z.lon], {radius: 60 + 260 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.04 + .2 * (z.perWeek / max) ** 2, bubblingMouseEvents:true})
     .bindTooltip(`zone ${z.id}: ${fmt(z.perWeek,1)} calls/week forecast, ${fmt(z.nowPerHour,3)}/h now`).addTo(layers.demand));
   demandLoaded = true;
 }
@@ -276,7 +277,7 @@ async function loadDemand() {
 const ambMarkers = {};
 function ambIcon(a) {
   const c = css(PHASE[a.phase] || '--avail');
-  return L.divIcon({className:'', html:`<div class="amb-icon" style="background:${c};width:30px">${a.unit}${a.id}</div>`, iconSize:[30,16], iconAnchor:[15,8]});
+  return L.divIcon({className:'', html:`<div class="amb-icon" style="background:${c};width:40px">${a.unit}${a.id}</div>`, iconSize:[40,16], iconAnchor:[20,8]});
 }
 
 async function poll() {
@@ -378,7 +379,7 @@ async function loadResults() {
     }
   }
   $('resultsGrid').innerHTML = `
-    <div class="card wide"><h2>Simulation: same 8 ambulances, smarter decisions</h2>${r.simulation ? mdTable(r.simulation) : '<p>Run <code>simulate</code> to generate.</p>'}</div>
+    <div class="card wide"><h2>Simulation: same fleet, smarter decisions</h2>${r.simulation ? mdTable(r.simulation) : '<p>Run <code>simulate</code> to generate.</p>'}</div>
     <div class="card"><h2>Demand forecasting on real 911 calls</h2>${fc || '<p>Run the ML pipeline to generate.</p>'}</div>
     <div class="card"><h2>Routing &amp; dispatch performance</h2>${r.benchmarks ? mdTable(r.benchmarks) : '<p>Run <code>bench</code> to generate.</p>'}</div>`;
 }

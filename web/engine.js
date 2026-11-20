@@ -221,7 +221,7 @@
     'UNRESPONSIVE SUBJECT': "father unresponsive in bed, breathing slowly", 'HEMORRHAGING': 'deep cut with severe bleeding from forearm',
     'MATERNITY': 'pregnant, 39 weeks, contractions every 3 minutes', 'OVERDOSE': 'suspected overdose, drowsy and vomiting',
     'DIABETIC EMERGENCY': 'diabetic, confused and shaky, low sugar reading', 'ALLERGIC REACTION': 'swollen lips after eating nuts, allergic reaction',
-    'ABDOMINAL PAINS': 'severe abdominal pain and vomiting since morning', 'HEAD INJURY': 'skier hit a tree, head injury, conscious',
+    'ABDOMINAL PAINS': 'severe abdominal pain and vomiting since morning', 'HEAD INJURY': 'scooter rider hit by a car, head injury, conscious',
     'BURN VICTIM': 'kitchen fire, burns to both hands', 'SUBJECT IN PAIN': 'back pain, cannot get out of bed', 'FEVER': 'child with high fever and headache' };
 
   // ------------------------------------------------------------------ dispatch engine + live fleet
@@ -234,11 +234,11 @@
       this.hospitals = d.hospitals;
       const dj = new Dijkstra(this.g);
       this.toHospital = this.hospitals.map(h => dj.allTo(h.node));       // reverse trees, as in DispatchEngine
-      this.zones = d.zones; this.caseMix = d.caseMix; this.volume = d.volume; this.shortcuts = d.shortcuts;
+      this.city = d.city || 'City'; this.zones = d.zones; this.caseMix = d.caseMix; this.volume = d.volume; this.shortcuts = d.shortcuts;
       this.amb = d.bases.map((b, i) => ({ id: i, unit: i % 3 === 2 ? 'BLS' : 'ALS', node: b, base: b, free: true, job: null }));
       this.speed = speed; this.autoCalls = true; this.seq = 0;
       this.incidents = []; this.queue = []; this.events = []; this.resp = []; this.p1 = [0, 0]; this.lat = [];
-      const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Andorra' }));
+      const now = new Date(new Date().toLocaleString('en-US', { timeZone: d.tz || 'UTC' }));
       this.simStart = (((now.getDay() + 6) % 7) * 24 + now.getHours()) * 3600 + now.getMinutes() * 60;
       this.wallStart = performance.now();
       this.cache = new Map();
@@ -410,7 +410,7 @@
     if (p === 'info') {
       let a0 = 90, a1 = -90, o0 = 180, o1 = -180;
       for (let v = 0; v < g.n; v++) { a0 = Math.min(a0, g.lat[v]); a1 = Math.max(a1, g.lat[v]); o0 = Math.min(o0, g.lon[v]); o1 = Math.max(o1, g.lon[v]); }
-      return [200, { nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
+      return [200, { city: w.city, nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
     }
     if (p === 'state') return [200, w.state()];
     if (p === 'incidents' && method === 'POST') {

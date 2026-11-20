@@ -27,6 +27,10 @@ public final class Scenario {
     public final List<Zone> zones = new ArrayList<>();
     public final List<CaseType> caseMix = new ArrayList<>();
     public final List<double[]> hospitals = new ArrayList<>();                 // {lat, lon}
+    /** Named hospitals with known capabilities (optional {@code hospitals.csv}); otherwise OSM facilities are used. */
+    public final List<String> hospitalNames = new ArrayList<>();
+    public final List<EnumSet<Specialty>> hospitalSpecs = new ArrayList<>();
+    public String name = "City", timeZone = "UTC";
 
     public static Scenario load(Path dir, DispatchEngine engine) throws IOException {
         Scenario s = new Scenario();
@@ -38,8 +42,25 @@ public final class Scenario {
         s.zones.addAll(zones.values());
         for (String[] r : rows(dir.resolve("case_mix.csv")))
             s.caseMix.add(new CaseType(r[0], Severity.valueOf(r[1]), Specialty.valueOf(r[2]), Double.parseDouble(r[3])));
-        for (String[] r : rows(dir.resolve("facilities.csv")))
-            if (r[0].equals("hospital")) s.hospitals.add(new double[]{Double.parseDouble(r[2]), Double.parseDouble(r[3])});
+        Path named = dir.resolve("hospitals.csv");
+        if (Files.exists(named)) {
+            for (String[] r : rows(named)) {
+                s.hospitals.add(new double[]{Double.parseDouble(r[1]), Double.parseDouble(r[2])});
+                s.hospitalNames.add(r[0]);
+                EnumSet<Specialty> set = EnumSet.noneOf(Specialty.class);
+                for (String x : r[3].split("\\|")) set.add(Specialty.valueOf(x.trim()));
+                s.hospitalSpecs.add(set);
+            }
+        } else {
+            for (String[] r : rows(dir.resolve("facilities.csv")))
+                if (r[0].equals("hospital")) s.hospitals.add(new double[]{Double.parseDouble(r[r.length - 2]), Double.parseDouble(r[r.length - 1])});
+        }
+        Path nm = dir.resolve("name.txt");
+        if (Files.exists(nm)) {
+            List<String> l = Files.readAllLines(nm);
+            s.name = l.get(0).trim();
+            if (l.size() > 1 && !l.get(1).isBlank()) s.timeZone = l.get(1).trim();
+        }
         return s;
     }
 
@@ -49,6 +70,11 @@ public final class Scenario {
      * trauma, maternity) and smaller sites get a rotating subset. Replace with real capability data in production.
      */
     public void addHospitals(DispatchEngine engine) {
+        if (!hospitalNames.isEmpty()) {
+            for (int i = 0; i < hospitals.size(); i++)
+                engine.addHospital(new Hospital(i, hospitalNames.get(i), engine.snap(hospitals.get(i)[0], hospitals.get(i)[1]), hospitalSpecs.get(i), 1_000_000));
+            return;
+        }
         Specialty[][] specs = {
             {Specialty.GENERAL, Specialty.TRAUMA, Specialty.BURNS}, {Specialty.GENERAL, Specialty.MATERNITY}, {Specialty.GENERAL, Specialty.CARDIAC}};
         double cl = 0, co = 0, w = 0;

@@ -80,6 +80,16 @@ public final class RoutingTest {
         agree(g, 300, 42);
     }
 
+    /** Regression: OSM data contains self-loops; contracting them used to grow the list being iterated, forever. */
+    public static void testSelfLoopsDoNotBreakContraction() {
+        double[] lat = {0, 0, 0, 0.001}, lon = {0, 0.001, 0.002, 0.001};
+        int[] from = {0, 1, 1, 1, 2, 3, 3, 1};
+        int[] to   = {1, 0, 2, 1, 1, 3, 1, 3};       // 1→1 and 3→3 are self-loops
+        double[] w = {10, 10, 10, 5, 10, 7, 4, 4};
+        RoadGraph g = RoadGraph.of(lat, lon, from, to, w);
+        agree(g, 16, 3);
+    }
+
     public static void testOneToManyMatchesPointToPoint() {
         RoadGraph g = randomGraph(200, 4, 7);
         Dijkstra d = new Dijkstra(g);

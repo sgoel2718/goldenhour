@@ -42,8 +42,9 @@ public final class Experiments {
         ContractionHierarchy ch = new ContractionHierarchy(g);
 
         List<String> md = new ArrayList<>();
-        md.add("# Simulation results\n");
-        md.add(String.format("Road graph: %,d nodes / %,d directed edges (OpenStreetMap). Fleet %d ambulances (⅓ BLS). Demand: %.1f× the per-capita EMS rate of the real 911 data, %d weeks × %d seeds per arm, identical call streams across arms.%n",
+        Scenario meta = Scenario.load(dir, new DispatchEngine(g, ch));
+        md.add("# Simulation results — " + meta.name + "\n");
+        md.add(String.format("Road graph: %,d nodes / %,d directed edges (OpenStreetMap). Fleet %d ambulances (⅓ BLS). Demand: %.2f× the per-capita EMS rate of the real 911 data, %d weeks × %d seeds per arm, identical call streams across arms.%n",
             g.nodeCount(), g.edgeCount(), amb, scale, weeks, seeds));
         md.add("| Configuration | P1 median | P1 p90 | **P1 reached ≤ 8 min** | Δ vs previous step (95% CI) | All-call p90 | Utilisation |");
         md.add("|---|---:|---:|---:|---:|---:|---:|");
@@ -67,7 +68,7 @@ public final class Experiments {
         md.add("\n## Fleet size needed\n");
         md.add("Share of P1 calls reached within 8 minutes as the fleet grows (same demand). Reading across a row shows how many ambulances the optimised system saves for the same service level.\n");
         StringBuilder head = new StringBuilder("| Configuration |"), sep = new StringBuilder("|---|");
-        int[] fleets = {4, 5, 6, 7, 8, 10};
+        int[] fleets = java.util.stream.IntStream.of(50, 63, 75, 88, 100, 125).map(x -> Math.max(1, (int) Math.round(amb * x / 100.0))).toArray();
         for (int f : fleets) { head.append(" ").append(f).append(" |"); sep.append("---:|"); }
         md.add(head.toString()); md.add(sep.toString());
         for (int a : new int[]{0, 1, 2, 3, 5}) {

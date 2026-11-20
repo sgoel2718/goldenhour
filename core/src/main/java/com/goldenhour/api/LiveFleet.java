@@ -79,7 +79,7 @@ public final class LiveFleet {
         Map.entry("DIABETIC EMERGENCY", "diabetic, confused and shaky, low sugar reading"),
         Map.entry("ALLERGIC REACTION", "swollen lips after eating nuts, allergic reaction"),
         Map.entry("ABDOMINAL PAINS", "severe abdominal pain and vomiting since morning"),
-        Map.entry("HEAD INJURY", "skier hit a tree, head injury, conscious"),
+        Map.entry("HEAD INJURY", "scooter rider hit by a car, head injury, conscious"),
         Map.entry("BURN VICTIM", "kitchen fire, burns to both hands"),
         Map.entry("SUBJECT IN PAIN", "back pain, cannot get out of bed"),
         Map.entry("FEVER", "child with high fever and headache"));
@@ -87,7 +87,7 @@ public final class LiveFleet {
     public LiveFleet(DispatchEngine engine, Scenario sc, Triage triage, Metrics metrics, double speed, double volume, boolean autoCalls) {
         this.engine = engine; this.sc = sc; this.triage = triage; this.metrics = metrics;
         this.g = engine.graph(); this.speed = speed; this.volume = volume; this.autoCalls = autoCalls;
-        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Andorra"));
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of(sc.timeZone));
         simStart = ((now.getDayOfWeek().getValue() - 1) * 24 + now.getHour()) * 3600.0 + now.getMinute() * 60.0;
     }
 
