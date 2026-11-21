@@ -19,7 +19,7 @@ public final class Main {
             case "serve" -> {
                 Server s = new Server(Path.of(env("GH_DATA", "data/chennai")), Path.of(env("GH_WEB", "web")).toAbsolutePath().normalize(),
                     Path.of(env("GH_REPORTS", "reports")), Path.of(env("GH_WAL", "data/wal/events.log")), System.getenv("GH_ML_URL"),
-                    Integer.parseInt(env("GH_AMBULANCES", "20")), Double.parseDouble(env("GH_SPEED", "60")), Double.parseDouble(env("GH_VOLUME", "0.35")),
+                    Integer.parseInt(env("GH_AMBULANCES", "20")), Double.parseDouble(env("GH_SPEED", "1")), Double.parseDouble(env("GH_VOLUME", "0.35")),
                     Boolean.parseBoolean(env("GH_AUTO_CALLS", "true")));
                 s.start(Integer.parseInt(env("PORT", env("GH_PORT", "8080"))));
             }

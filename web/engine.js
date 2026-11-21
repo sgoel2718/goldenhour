@@ -226,7 +226,7 @@
 
   // ------------------------------------------------------------------ dispatch engine + live fleet
   class World {
-    constructor(d, speed = 60) {
+    constructor(d, speed = 1) {
       const t0 = performance.now();
       this.g = new Graph(d);
       this.ch = new CH(this.g, d.ch);
@@ -239,13 +239,14 @@
       this.speed = speed; this.autoCalls = true; this.seq = 0;
       this.incidents = []; this.queue = []; this.events = []; this.resp = []; this.p1 = [0, 0]; this.lat = [];
       const now = new Date(new Date().toLocaleString('en-US', { timeZone: d.tz || 'UTC' }));
-      this.simStart = (((now.getDay() + 6) % 7) * 24 + now.getHours()) * 3600 + now.getMinutes() * 60;
+      this.simStart = (((now.getDay() + 6) % 7) * 24 + now.getHours()) * 3600 + now.getMinutes() * 60 + now.getSeconds();
       this.wallStart = performance.now();
       this.cache = new Map();
       this.loadMs = performance.now() - t0;
       this.rnd = mulberry(42);
     }
     now() { return this.simStart + (performance.now() - this.wallStart) / 1000 * this.speed; }
+    setSpeed(x) { this.simStart = this.now(); this.wallStart = performance.now(); this.speed = x; }   // re-anchor: no jump
     route(a, b) {
       const k = a * this.g.n + b;
       let r = this.cache.get(k);
@@ -394,7 +395,7 @@
   }
 
   function incJson(i) { return { id: i.id, lat: i.lat, lon: i.lon, severity: i.severity, need: i.need, category: i.category, notes: i.notes, time: clock(i.created) }; }
-  function clock(s) { const d = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']; s = Math.floor(s); return `${d[Math.floor(s / 86400) % 7]} ${String(Math.floor(s / 3600) % 24).padStart(2, '0')}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}`; }
+  function clock(s) { const d = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], p = x => String(x).padStart(2, '0'); s = Math.floor(s); return `${d[Math.floor(s / 86400) % 7]} ${p(Math.floor(s / 3600) % 24)}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`; }
   function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
   // ------------------------------------------------------------------ API facade (same paths/payloads as the Java server)
@@ -418,7 +419,7 @@
       const r = w.report(body.lat, body.lon, String(body.notes || '').slice(0, 1000), 'browser');
       return [r.assignment ? 201 : 202, r];
     }
-    if (p === 'sim' && method === 'POST') { if (typeof body.autoCalls === 'boolean') w.autoCalls = body.autoCalls; return [200, { autoCalls: w.autoCalls }]; }
+    if (p === 'sim' && method === 'POST') { if (typeof body.autoCalls === 'boolean') w.autoCalls = body.autoCalls; if ([1, 10, 60].includes(body.speed)) w.setSpeed(body.speed); return [200, { autoCalls: w.autoCalls, speed: w.speed }]; }
     if (p === 'demand') {
       const how = Math.floor(w.now() / 3600) % 168;
       return [200, { hourOfWeek: how, zones: w.zones.map(z => ({ id: z.id, lat: g.lat[z.node], lon: g.lon[z.node], nowPerHour: z.rates[how], perWeek: z.rates.reduce((x, y) => x + y, 0) })) }];

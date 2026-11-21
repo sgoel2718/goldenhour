@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Random;
 
 /**
- * The live system behind the dashboard: a simulated clock running {@code speed}× faster than real time,
+ * The live system behind the dashboard: a clock that starts at the city's real local time and runs at {@code speed}× (1 = real time),
  * ambulances that physically drive their routes (their position is interpolated along the road geometry and
  * pushed into the dispatcher's spatial index as they move), and an optional synthetic call stream drawn from
  * the forecast demand model so the demo is never idle.
@@ -55,9 +55,10 @@ public final class LiveFleet {
     private final Map<String, Double> responseMin = new HashMap<>();
     private final Deque<Event> events = new ArrayDeque<>();
     private final Random rnd = new Random(42);
-    private final double speed, volume;
-    private final long wallStart = System.nanoTime();
-    private final double simStart;      // seconds since Monday 00:00 of the simulated week
+    private final double volume;
+    private volatile double speed;
+    private volatile long wallStart = System.nanoTime();
+    private volatile double simStart;   // seconds since Monday 00:00 of the simulated week (city's local time)
     private volatile boolean autoCalls;
     private int seq;
     private int p1Total, p1Within;
@@ -88,13 +89,15 @@ public final class LiveFleet {
         this.engine = engine; this.sc = sc; this.triage = triage; this.metrics = metrics;
         this.g = engine.graph(); this.speed = speed; this.volume = volume; this.autoCalls = autoCalls;
         java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of(sc.timeZone));
-        simStart = ((now.getDayOfWeek().getValue() - 1) * 24 + now.getHour()) * 3600.0 + now.getMinute() * 60.0;
+        simStart = ((now.getDayOfWeek().getValue() - 1) * 24 + now.getHour()) * 3600.0 + now.getMinute() * 60.0 + now.getSecond();
     }
 
     public double now() { return simStart + (System.nanoTime() - wallStart) / 1e9 * speed; }
     public void setAutoCalls(boolean on) { autoCalls = on; }
     public boolean autoCalls() { return autoCalls; }
     public double speed() { return speed; }
+    /** Change the clock rate without a jump: re-anchor the simulated time at "now". 1 = real time. */
+    public synchronized void setSpeed(double x) { simStart = now(); wallStart = System.nanoTime(); speed = x; }
 
     // ------------------------------------------------------------------ incidents
     /** Triage → dispatch → start the job. Returns the incident, its assignment (or empty = queued) and the decision audit. */
@@ -345,7 +348,7 @@ public final class LiveFleet {
     static String clock(double simSeconds) {
         String[] d = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
         long s = (long) simSeconds;
-        return String.format("%s %02d:%02d", d[(int) (s / 86400 % 7)], s / 3600 % 24, s / 60 % 60);
+        return String.format("%s %02d:%02d:%02d", d[(int) (s / 86400 % 7)], s / 3600 % 24, s / 60 % 60, s % 60);
     }
 
     static String mins(double s) { return String.format("%.1f min", s / 60); }

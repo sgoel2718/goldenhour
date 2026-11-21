@@ -121,7 +121,7 @@ scripts/reproduce.sh
 
 **No server? No problem.** `scripts/build_static.sh` exports the road graph and the contraction hierarchy (preprocessed by the Java core) into `web/data/`. The same dashboard then runs entirely in the browser (`web/engine.js` ports the CH query, dispatch and live fleet logic). That is how the free static demo is hosted. In the browser, all four routers return identical answers on 200 random queries.
 
-**Dashboard:** click the map and describe the emergency. You see the triage result, every candidate unit with its straight-line distance next to its road ETA, and the chosen route. Ambulances then drive their routes live on the map at 60× speed. The **Routing lab** tab runs one query through all four algorithms side by side. The **Results** tab shows every table above.
+**Dashboard:** click the map and describe the emergency. You see the triage result, every candidate unit with its straight-line distance next to its road ETA, and the chosen route. Ambulances then drive their routes live on the map. The clock starts at the real local time and runs in real time by default; switch to 10× or 60× to watch a whole call play out. **📍 Use my location** reports the emergency at your own position (when you are inside the mapped area). The **Routing lab** tab runs one query through all four algorithms side by side. The **Results** tab shows every table above.
 
 **API**
 ```http

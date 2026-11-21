@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
  * GET  /api/v1/state            fleet, incidents, hospitals, live stats, decision log
  * GET  /api/v1/route?from=lat,lon&to=lat,lon&algo=ch|dijkstra|astar|bidi   → path + settled nodes + latency
  * GET  /api/v1/demand           forecast calls per zone for the current hour (heat map)
- * POST /api/v1/sim              {autoCalls: bool}   toggle the synthetic call stream
+ * POST /api/v1/sim              {autoCalls: bool, speed: 1|10|60}   call stream on/off, clock rate
  * GET  /api/v1/reports          simulation + forecast results (markdown / json)
  * GET  /health, /metrics        liveness, Prometheus metrics
  * </pre>
@@ -205,7 +205,8 @@ public final class Server {
     private int sim(HttpExchange ex) throws IOException {
         Map<String, Object> body = Json.parseObject(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         if (body.get("autoCalls") instanceof Boolean on) fleet.setAutoCalls(on);
-        return json(ex, 200, Map.of("autoCalls", fleet.autoCalls()));
+        if (body.get("speed") instanceof Number n && (n.intValue() == 1 || n.intValue() == 10 || n.intValue() == 60)) fleet.setSpeed(n.intValue());
+        return json(ex, 200, Map.of("autoCalls", fleet.autoCalls(), "speed", fleet.speed()));
     }
 
     private int reports(HttpExchange ex) throws IOException {
