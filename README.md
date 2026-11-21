@@ -121,6 +121,15 @@ scripts/reproduce.sh
 
 **No server? No problem.** `scripts/build_static.sh` exports the road graph and the contraction hierarchy (preprocessed by the Java core) into `web/data/`. The same dashboard then runs entirely in the browser (`web/engine.js` ports the CH query, dispatch and live fleet logic). That is how the free static demo is hosted. In the browser, all four routers return identical answers on 200 random queries.
 
+**Any city in the world.** Besides the prebuilt cities, the city picker's **🌍 Any city in the world** option (or "Build it around me") builds a dispatch system for any place on Earth, live in the browser, in about 10–40 seconds:
+1. It downloads the drivable roads and hospitals within 4 km from OpenStreetMap, using the Overpass API.
+2. It builds the road graph, keeping only the largest strongly connected component (iterative Kosaraju) so every point can reach every other.
+3. It estimates demand zones from residential street length, with the hour-of-week profile learned from the real 911 data.
+4. It picks hospitals and infers what each treats from its name (an assumption). Phone numbers come from OpenStreetMap when tagged.
+5. It places ambulances with the same lazy-greedy MEXCLP coverage objective as the Java planner, on 7-minute drive-time coverage.
+
+The emergency number shown follows the country. The built city is cached in IndexedDB, so a refresh doesn't download it again. Cities built live route with A*. Contraction-hierarchy preprocessing is done offline in Java for the prebuilt cities (`web/anywhere.js`).
+
 **Dashboard:** click the map and describe the emergency. You see the triage result, every candidate unit with its straight-line distance next to its road ETA, and the chosen route. Ambulances then drive their routes live on the map. The clock starts at the real local time and runs in real time by default; switch to 10× or 60× to watch a whole call play out. **📍 Use my location** reports the emergency at your own position (when you are inside the mapped area). The **Routing lab** tab runs one query through all four algorithms side by side. The **Results** tab shows every table above.
 
 **API**

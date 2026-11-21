@@ -115,11 +115,18 @@ tr.win td{color:var(--avail);font-weight:600}
     <div class="kpi"><b id="k-p99">—</b><span>dispatch p99</span></div>
   </div>
 </header>
-<div class="banner">⚠️ Demo & simulation only: these ambulances are not real. In a real emergency in India call <a href="tel:108">108</a> (ambulance) or <a href="tel:112">112</a>.</div>
+<div class="banner">⚠️ Demo & simulation only: these ambulances are not real. In a real emergency call <a id="emNum" href="tel:108">108</a> (ambulance) or <a href="tel:112">112</a>.</div>
 <main id="mainLive">
   <div id="map"></div>
   <aside>
     <section class="view on" id="v-live" style="flex-direction:column;gap:14px">
+      <div class="card" id="worldCard" hidden>
+        <h3>🌍 Any city in the world</h3>
+        <p class="hint" style="margin:0 0 8px">Downloads that city's real roads and hospitals from OpenStreetMap and builds the dispatch system in your browser (about 10–40 s).</p>
+        <div class="row" style="flex-wrap:wrap;margin-bottom:6px"><button class="go" id="worldNear">📍 Build it around me</button></div>
+        <form id="worldForm" class="row"><input id="worldQ" placeholder="City or area, e.g. Nairobi, Brooklyn, Shibuya" autocomplete="off" style="flex:1;min-width:0;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit"><button class="ghost" type="submit">Search</button></form>
+        <div id="worldOut" class="hint" style="margin-top:8px"></div>
+      </div>
       <div class="card track" id="track" hidden></div>
       <div class="card">
         <h3>Report an emergency</h3>
@@ -168,6 +175,7 @@ tr.win td{color:var(--avail);font-weight:600}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="engine.js"></script>
+<script src="anywhere.js"></script>
 <script>
 const API = '';
 // City: ?city=… in the URL, else the last one chosen, else Chennai (then the nearest city to the visitor, if they allow location).
@@ -188,7 +196,8 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, class
 const layers = {demand:L.layerGroup().addTo(map), routes:L.layerGroup().addTo(map), bases:L.layerGroup(), hosp:L.layerGroup().addTo(map), inc:L.layerGroup().addTo(map), amb:L.layerGroup().addTo(map), lab:L.layerGroup().addTo(map), pick:L.layerGroup().addTo(map)};
 let tab = 'live', picked = null, labPts = [], lastState = null;
 
-let MODE = 'server';
+let MODE = 'server', EMERG = '108', ROUTING = 'contraction hierarchies';
+const urlPlace = new URLSearchParams(location.search).get('place');
 // Same dashboard, two back ends: the Java server if one is there, otherwise the in-browser engine (static hosting).
 async function call(method, path, body) {
   if (MODE === 'browser') { const [status, json] = await GH.api(method, path, body); return {status, ok: status < 300, json}; }
@@ -201,18 +210,42 @@ async function boot() {
     MODE = 'browser'; $('modeTag').textContent = 'browser edition · no server';
     let cities = [];
     try { const r = await fetch('data/cities.json'); if (r.ok) cities = await r.json(); } catch (e) { }
-    if (cities.length) {
-      const sel = $('citySel');
-      sel.innerHTML = cities.map(c => `<option value="${c.slug}">${esc(c.name)}</option>`).join('');
+    const sel = $('citySel');
+    sel.innerHTML = cities.map(c => `<option value="${c.slug}">${esc(c.name)}</option>`).join('') + '<option value="__world">🌍 Any city in the world…</option>';
+    sel.hidden = false;
+    sel.onchange = () => {
+      if (sel.value === '__world') { $('worldCard').hidden = false; $('worldQ').focus(); document.querySelector('aside').scrollTo({top:0}); return; }
+      try { localStorage.setItem('goldenhour-city', sel.value); } catch (e) { } location.search = '?city=' + sel.value;
+    };
+    if (urlPlace) {                                   // a city built live from OpenStreetMap
+      const q = new URLSearchParams(location.search), [plat, plon] = urlPlace.split(',').map(Number);
+      const name = q.get('name') || 'Selected area', cc = (q.get('cc') || '').toLowerCase(), radius = +(q.get('r') || 4000);
+      sel.insertAdjacentHTML('afterbegin', `<option value="__place">${esc(name)}</option>`); sel.value = '__place';
+      map.setView([plat, plon], 13);
+      const key = `place:${plat.toFixed(4)},${plon.toFixed(4)},${radius}`;
+      let d = await GHWorld.cacheGet(key);
+      if (!d) {
+        $('track').hidden = true;
+        try {
+          const model = await (await fetch('data/world_model.json')).json();
+          d = await GHWorld.buildCity({lat: plat, lon: plon, radius, name, cc}, msg => { $('pickHint').textContent = msg; }, model);
+          GHWorld.cachePut(key, d);
+        } catch (err) {
+          $('pickHint').innerHTML = `<b style="color:var(--p1)">Could not build ${esc(name)}:</b> ${esc(err.message)}`;
+          $('worldCard').hidden = false; return;
+        }
+      }
+      await GH.init(null, key, d);
+    } else if (cities.length) {
       const city = cities.find(c => c.slug === CITY) || cities[0];
-      sel.value = city.slug; sel.hidden = false;
-      sel.onchange = () => { try { localStorage.setItem('goldenhour-city', sel.value); } catch (e) { } location.search = '?city=' + sel.value; };
+      sel.value = city.slug;
       // first visit with no choice yet: jump to the city nearest to the visitor
       if (!urlCity && !storedCity && navigator.geolocation && window.self === window.top) {
         navigator.geolocation.getCurrentPosition(p => {
-          const near = cities.map(c => [c, Math.hypot(c.center[0] - p.coords.latitude, c.center[1] - p.coords.longitude)]).sort((a, b) => a[1] - b[1])[0][0];
-          try { localStorage.setItem('goldenhour-city', near.slug); } catch (e) { }
-          if (near.slug !== city.slug) location.replace('?city=' + near.slug);
+          const near = cities.map(c => [c, Math.hypot(c.center[0] - p.coords.latitude, c.center[1] - p.coords.longitude)]).sort((a, b) => a[1] - b[1])[0];
+          if (near[1] > 0.4) { buildAround(p.coords.latitude, p.coords.longitude); return; }   // > ~40 km from every prebuilt city: build the visitor's own city
+          try { localStorage.setItem('goldenhour-city', near[0].slug); } catch (e) { }
+          if (near[0].slug !== city.slug) location.replace('?city=' + near[0].slug);
         }, () => { }, {timeout: 8000});
       }
       $('pickHint').textContent = `Loading ${city.name}'s road network into your browser (${city.mb} MB)…`;
@@ -228,6 +261,8 @@ async function boot() {
   serviceArea = i.hull && i.hull.length > 2 ? i.hull : null;
   if (serviceArea) L.polygon(serviceArea, {color:css('--accent'), weight:1.5, dashArray:'6 6', fill:false, interactive:false}).addTo(map);
   if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
+  if (i.emergency) { EMERG = i.emergency; $('emNum').textContent = EMERG; $('emNum').href = 'tel:' + EMERG; }
+  if (i.routing) ROUTING = i.routing;
   // the page may be inside an iframe (Hugging Face) that is sized after load: re-measure before fitting
   let centred = false;
   const fit = () => { map.invalidateSize(); if (!centred) map.fitBounds(i.bounds, {padding:[10,10]}); };
@@ -302,7 +337,7 @@ function renderDecision(d) {
     html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. The patient goes to <b>${esc(a.hospital)}</b> because it is the nearest hospital that treats <b>${esc(t.need.toLowerCase())}</b> cases.</p>`;
     const hp = a.hospitalPhone;
     html += `<div class="contacts">
-      <div class="contact"><div>🚑 <b>AMB-${a.ambulance}</b> (${a.unit === 'ALS' ? 'paramedic' : 'basic'} crew)<small>Simulated unit. Real crews are reached through the 108 control room: quote ${esc(d.incident.id)}.</small></div><a class="callbtn" href="tel:108">Call 108</a></div>
+      <div class="contact"><div>🚑 <b>AMB-${a.ambulance}</b> (${a.unit === 'ALS' ? 'paramedic' : 'basic'} crew)<small>Simulated unit. Real crews are reached through the ${EMERG} control room: quote ${esc(d.incident.id)}.</small></div><a class="callbtn" href="tel:${EMERG}">Call ${EMERG}</a></div>
       <div class="contact"><div>🏥 <b>${esc(a.hospital)}</b><small>${hp ? 'Number from the hospital\'s official website' : 'Number not verified here: opens Google Maps with the hospital\'s listing and phone'}</small></div>${hp ? `<a class="callbtn" href="tel:${hp.replace(/[^0-9+]/g, '')}">Call ${esc(hp)}</a>` : ''}<a class="callbtn alt" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.hospital + ' ' + $('cityTag').textContent)}">Maps</a></div>
     </div>`;
     html += `<p style="margin:8px 0"><b>AMB-${a.ambulance}</b> (${a.unit}) dispatched · ETA <b>${fmt(a.etaMin)} min</b> → ${esc(a.hospital)} (+${fmt(a.transportMin)} min) · decided in ${fmt(d.dispatchMs,2)} ms</p>`;
@@ -404,7 +439,7 @@ const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(s
 const pathKm = path => { let m = 0; for (let i = 1; i < (path || []).length; i++) m += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i])); return m / 1000; };
 
 // Every call you send is kept (in this browser) until it is finished, so a refresh or a second call never loses one.
-const CALLS_KEY = 'goldenhour-mycalls-v1-' + CITY;
+const CALLS_KEY = 'goldenhour-mycalls-v1-' + (urlPlace ? 'place:' + urlPlace : CITY);
 let myCalls = [], selectedId = null;
 try { myCalls = JSON.parse(localStorage.getItem(CALLS_KEY) || '[]'); } catch (e) { myCalls = []; }
 const saveCalls = () => { try { localStorage.setItem(CALLS_KEY, JSON.stringify(myCalls)); } catch (e) { } };
@@ -479,7 +514,7 @@ function updateLive(s) {
       <div class="title">${st.title}</div>${isSel && st.big ? `<div class="big">${st.big}</div>` : !isSel && st.big ? `<div class="meta">${st.big.replace(/<[^>]+>/g, ' ')}</div>` : ''}${isSel ? st.meta : ''}
       ${isSel ? `<div class="steps">${STEPS.map((_, i) => `<span class="${i < st.step || st.step === 5 ? 'on' : i === st.step ? 'cur' : ''}"></span>`).join('')}</div>
       <div class="labels">${STEPS.map((x, i) => `<span class="${i === st.step && st.step < 5 ? 'cur' : ''}">${x}</span>`).join('')}</div>` : ''}
-      ${isSel ? `<div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:108">Call 108</a>${st.amb && !follow ? '<button class="ghost followBtn">Follow ambulance</button>' : ''}</div>` : '<div class="hint">Tap to track this call</div>'}
+      ${isSel ? `<div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:${EMERG}">Call ${EMERG}</a>${st.amb && !follow ? '<button class="ghost followBtn">Follow ambulance</button>' : ''}</div>` : '<div class="hint">Tap to track this call</div>'}
     </div>`;
   }
   html += `<div class="hint" style="margin-top:6px">${s.speed === 1 ? `Real time · ${esc(s.clock)}` : `Clock running ${s.speed}× · ${esc(s.clock)}`} · kept on this device until finished</div>`;
@@ -550,6 +585,39 @@ async function poll() {
     updateLive(s);
   } catch (e) { /* server restarting: keep polling */ }
 }
+// ---------------------------------------------------------------- any city in the world
+function goPlace(lat, lon, name, cc) {
+  location.search = `?place=${(+lat).toFixed(5)},${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}&cc=${encodeURIComponent(cc || '')}&r=4000`;
+}
+async function buildAround(lat, lon) {
+  $('worldOut').textContent = 'Finding the name of your area…';
+  let name = 'Your area', cc = '';
+  try {
+    const r = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${lat}&lon=${lon}`, {headers: {'Accept-Language': 'en'}})).json();
+    const a = r.address || {}; name = a.city || a.town || a.county || a.state_district || a.state || name; cc = a.country_code || '';
+  } catch (e) { }
+  goPlace(lat, lon, name, cc);
+}
+$('worldNear').onclick = () => {
+  if (!navigator.geolocation || window.self !== window.top) { $('worldOut').innerHTML = `Location needs the full page: <a href="${location.href}" target="_blank" rel="noopener" style="color:var(--accent)">open it</a>, or search for a city below.`; return; }
+  $('worldOut').textContent = 'Finding your location…';
+  navigator.geolocation.getCurrentPosition(p => buildAround(p.coords.latitude, p.coords.longitude), () => { $('worldOut').textContent = 'Location not shared. Search for a city instead.'; }, {timeout: 10000});
+};
+$('worldForm').onsubmit = async e => {
+  e.preventDefault();
+  const q = $('worldQ').value.trim(); if (!q) return;
+  $('worldOut').textContent = 'Searching…';
+  try {
+    const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`, {headers: {'Accept-Language': 'en'}})).json();
+    if (!res.length) { $('worldOut').textContent = 'No place found. Try another spelling or add the country.'; return; }
+    $('worldOut').innerHTML = res.map((r, k) => `<div class="callcard" data-k="${k}">📍 ${esc(r.display_name)}</div>`).join('');
+    $('worldOut').querySelectorAll('.callcard').forEach(el => el.onclick = () => {
+      const r = res[+el.dataset.k], a = r.address || {};
+      goPlace(r.lat, r.lon, a.city || a.town || a.village || r.name || r.display_name.split(',')[0], a.country_code || '');
+    });
+  } catch (err) { $('worldOut').textContent = 'Place search is unavailable right now.'; }
+};
+
 boot();
 ['l-routes','l-bases'].forEach(id => $(id).onchange = () => {
   const lyr = {['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
@@ -561,14 +629,15 @@ $('labReset').onclick = () => { labPts = []; layers.lab.clearLayers(); $('labOut
 async function runLab() {
   const [a, b] = labPts, q = `from=${a.lat},${a.lng}&to=${b.lat},${b.lng}`;
   const rows = [];
-  for (const algo of ['dijkstra', 'astar', 'bidi', 'ch']) rows.push((await call('GET', `/api/v1/route?${q}&algo=${algo}`)).json);
-  const ch = rows[3];
+  const algos = ROUTING === 'A*' ? ['dijkstra', 'astar', 'bidi'] : ['dijkstra', 'astar', 'bidi', 'ch'];
+  for (const algo of algos) rows.push((await call('GET', `/api/v1/route?${q}&algo=${algo}`)).json);
+  const ch = rows[rows.length - 1];
   if (ch.path.length) L.polyline(ch.path, {color:css('--accent'), weight:5}).addTo(layers.lab);
   const base = rows[0].settledNodes;
-  $('labOut').innerHTML = `<p>Drive time <b>${fmt(ch.minutes)} min</b> — all four agree${rows.every(r => Math.abs(r.minutes - ch.minutes) < 1e-6) ? ' exactly ✓' : ' ✗'}</p>
+  $('labOut').innerHTML = `<p>Drive time <b>${fmt(ch.minutes)} min</b> — all ${rows.length} agree${rows.every(r => Math.abs(r.minutes - ch.minutes) < 1e-6) ? ' exactly ✓' : ' ✗'}</p>
     <table><tr><th>Algorithm</th><th class="num">nodes settled</th><th class="num">vs Dijkstra</th><th class="num">time</th></tr>` +
     rows.map(r => `<tr><td>${r.algorithm}</td><td class="num">${r.settledNodes.toLocaleString()}</td><td class="num">${fmt(base / Math.max(1, r.settledNodes), 0)}× less</td><td class="num">${fmt(r.queryMs, 2)} ms</td></tr>`).join('') + `</table>
-    <p class="hint">Contraction hierarchies precompute "shortcut" edges once, then every query only climbs upward from both ends.</p>`;
+    <p class="hint">${ROUTING === 'A*' ? 'This city was built live in your browser, so it routes with A*. The prebuilt cities also have contraction hierarchies, preprocessed offline by the Java core.' : 'Contraction hierarchies precompute "shortcut" edges once, then every query only climbs upward from both ends.'}</p>`;
 }
 
 // ---------------------------------------------------------------- results

@@ -229,8 +229,12 @@
     constructor(d, speed = 1) {
       const t0 = performance.now();
       this.g = new Graph(d);
-      this.ch = new CH(this.g, d.ch);
-      this.routers = { ch: this.ch, dijkstra: new Dijkstra(this.g), astar: new AStar(this.g), bidi: new Bidirectional(this.g) };
+      // prebuilt cities ship a contraction hierarchy (preprocessed in Java); cities built live in the browser route with A*
+      this.ch = d.ch ? new CH(this.g, d.ch) : null;
+      this.astar = new AStar(this.g);
+      this.routers = { dijkstra: new Dijkstra(this.g), astar: this.astar, bidi: new Bidirectional(this.g) };
+      if (this.ch) this.routers.ch = this.ch;
+      this.emergency = d.emergency || '108'; this.country = d.country || 'in';
       this.hospitals = d.hospitals;
       const dj = new Dijkstra(this.g);
       this.toHospital = this.hospitals.map(h => dj.allTo(h.node));       // reverse trees, as in DispatchEngine
@@ -238,8 +242,10 @@
       this.amb = d.bases.map((b, i) => ({ id: i, unit: i % 3 === 2 ? 'BLS' : 'ALS', node: b, base: b, free: true, job: null }));
       this.speed = speed; this.autoCalls = true; this.seq = 0;
       this.incidents = []; this.queue = []; this.events = []; this.resp = []; this.p1 = [0, 0]; this.lat = [];
-      const now = new Date(new Date().toLocaleString('en-US', { timeZone: d.tz || 'UTC' }));
-      this.simStart = (((now.getDay() + 6) % 7) * 24 + now.getHours()) * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      let now;
+      if (d.tzOffsetHours != null) { const u = new Date(Date.now() + d.tzOffsetHours * 3600e3); now = { d: u.getUTCDay(), h: u.getUTCHours(), m: u.getUTCMinutes(), s: u.getUTCSeconds() }; }
+      else { const u = new Date(new Date().toLocaleString('en-US', { timeZone: d.tz || 'UTC' })); now = { d: u.getDay(), h: u.getHours(), m: u.getMinutes(), s: u.getSeconds() }; }
+      this.simStart = (((now.d + 6) % 7) * 24 + now.h) * 3600 + now.m * 60 + now.s;
       this.wallStart = Date.now();
       this.cache = new Map();
       this.loadMs = performance.now() - t0;
@@ -279,7 +285,7 @@
     route(a, b) {
       const k = a * this.g.n + b;
       let r = this.cache.get(k);
-      if (!r) { r = this.ch.route(a, b); this.cache.set(k, r); if (this.cache.size > 20000) this.cache.delete(this.cache.keys().next().value); }
+      if (!r) { r = (this.ch || this.astar).route(a, b); this.cache.set(k, r); if (this.cache.size > 20000) this.cache.delete(this.cache.keys().next().value); }
       return r;
     }
     chooseHospital(inc) {
@@ -441,8 +447,8 @@
     return (await fetch(base + 'city.json')).json();
   }
   let saveKey = 'goldenhour-world-v1';
-  async function init(base = 'data/', key = 'default') {
-    const d = await loadBundle(base);
+  async function init(base = 'data/', key = 'default', data = null) {
+    const d = data || await loadBundle(base);
     world = new World(d);
     saveKey = 'goldenhour-world-v1-' + key;              // each city keeps its own live world
     try {
@@ -474,7 +480,7 @@
     if (p === 'info') {
       let a0 = 90, a1 = -90, o0 = 180, o1 = -180;
       for (let v = 0; v < g.n; v++) { a0 = Math.min(a0, g.lat[v]); a1 = Math.max(a1, g.lat[v]); o0 = Math.min(o0, g.lon[v]); o1 = Math.max(o1, g.lon[v]); }
-      return [200, { city: w.city, hull: hull(g), nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
+      return [200, { city: w.city, emergency: w.emergency, country: w.country, routing: w.ch ? 'contraction hierarchies' : 'A*', hull: hull(g), nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
     }
     if (p === 'state') {
       const st = w.state(), ids = url.searchParams.get('ids');
@@ -501,7 +507,7 @@
     }
     if (p === 'route') {
       const [fa, fo] = url.searchParams.get('from').split(',').map(Number), [ta, to] = url.searchParams.get('to').split(',').map(Number);
-      const r = w.routers[url.searchParams.get('algo') || 'ch'];
+      const r = w.routers[url.searchParams.get('algo') || 'ch'] || w.routers.astar;
       const s = g.snap(fa, fo), t = g.snap(ta, to), t0 = performance.now();
       let route = r.route(s, t), reps = 1;
       while (performance.now() - t0 < 2 && reps < 200) { route = r.route(s, t); reps++; }   // time tiny queries over repeats
