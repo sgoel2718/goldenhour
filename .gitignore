@@ -10,3 +10,10 @@ __pycache__/
 .vscode/
 .DS_Store
 .env
+# raw OSM extracts for the prebuilt cities are reproducible with scripts/download_cities.py (only Chennai + Andorra are kept for tests)
+data/*/nodes.csv
+data/*/edges.csv
+data/*/facilities.csv
+data/*/demand.csv
+!data/chennai/*.csv
+!data/city/*.csv

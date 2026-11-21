@@ -1,0 +1,1 @@
+Hospital list auto-selected from OpenStreetMap; capabilities are assumptions for the demo.

@@ -20,5 +20,1039 @@
   "population": 3825000,
   "ambulances": 38,
   "mb": 1.4
+ },
+ {
+  "slug": "mumbai",
+  "name": "Mumbai",
+  "cc": "in",
+  "center": [
+   19.06,
+   72.87
+  ],
+  "bounds": [
+   [
+    18.9972156,
+    72.8112728
+   ],
+   [
+    19.1229321,
+    72.9365843
+   ]
+  ],
+  "population": 4900000,
+  "ambulances": 49,
+  "mb": 0.9
+ },
+ {
+  "slug": "delhi",
+  "name": "Delhi",
+  "cc": "in",
+  "center": [
+   28.6139,
+   77.209
+  ],
+  "bounds": [
+   [
+    28.5509861,
+    77.1372955
+   ],
+   [
+    28.6768422,
+    77.2807074
+   ]
+  ],
+  "population": 2548000,
+  "ambulances": 25,
+  "mb": 1.7
+ },
+ {
+  "slug": "bengaluru",
+  "name": "Bengaluru",
+  "cc": "in",
+  "center": [
+   12.9716,
+   77.5946
+  ],
+  "bounds": [
+   [
+    12.9086508,
+    77.5300016
+   ],
+   [
+    13.0345447,
+    77.6591958
+   ]
+  ],
+  "population": 2548000,
+  "ambulances": 25,
+  "mb": 3.7
+ },
+ {
+  "slug": "hyderabad",
+  "name": "Hyderabad",
+  "cc": "in",
+  "center": [
+   17.385,
+   78.4867
+  ],
+  "bounds": [
+   [
+    17.3220496,
+    78.4207414
+   ],
+   [
+    17.4479487,
+    78.5526632
+   ]
+  ],
+  "population": 2352000,
+  "ambulances": 24,
+  "mb": 3.8
+ },
+ {
+  "slug": "kolkata",
+  "name": "Kolkata",
+  "cc": "in",
+  "center": [
+   22.5726,
+   88.3639
+  ],
+  "bounds": [
+   [
+    22.5141447,
+    88.3006007
+   ],
+   [
+    22.631054,
+    88.4272032
+   ]
+  ],
+  "population": 3718000,
+  "ambulances": 37,
+  "mb": 1.6
+ },
+ {
+  "slug": "pune",
+  "name": "Pune",
+  "cc": "in",
+  "center": [
+   18.5204,
+   73.8567
+  ],
+  "bounds": [
+   [
+    18.4619459,
+    73.7950586
+   ],
+   [
+    18.5788468,
+    73.9183482
+   ]
+  ],
+  "population": 1859000,
+  "ambulances": 19,
+  "mb": 1.1
+ },
+ {
+  "slug": "ahmedabad",
+  "name": "Ahmedabad",
+  "cc": "in",
+  "center": [
+   23.0225,
+   72.5714
+  ],
+  "bounds": [
+   [
+    22.9640442,
+    72.5078962
+   ],
+   [
+    23.0809441,
+    72.634911
+   ]
+  ],
+  "population": 2028000,
+  "ambulances": 20,
+  "mb": 1.6
+ },
+ {
+  "slug": "jaipur",
+  "name": "Jaipur",
+  "cc": "in",
+  "center": [
+   26.9124,
+   75.7873
+  ],
+  "bounds": [
+   [
+    26.8584479,
+    75.7267914
+   ],
+   [
+    26.9663539,
+    75.8478067
+   ]
+  ],
+  "population": 1296000,
+  "ambulances": 13,
+  "mb": 2.1
+ },
+ {
+  "slug": "lucknow",
+  "name": "Lucknow",
+  "cc": "in",
+  "center": [
+   26.8467,
+   80.9462
+  ],
+  "bounds": [
+   [
+    26.7927589,
+    80.885723
+   ],
+   [
+    26.9006491,
+    81.0066765
+   ]
+  ],
+  "population": 1296000,
+  "ambulances": 13,
+  "mb": 1.3
+ },
+ {
+  "slug": "surat",
+  "name": "Surat",
+  "cc": "in",
+  "center": [
+   21.1702,
+   72.8311
+  ],
+  "bounds": [
+   [
+    21.1162586,
+    72.7732384
+   ],
+   [
+    21.2241575,
+    72.8889642
+   ]
+  ],
+  "population": 1728000,
+  "ambulances": 17,
+  "mb": 2.2
+ },
+ {
+  "slug": "kanpur",
+  "name": "Kanpur",
+  "cc": "in",
+  "center": [
+   26.4499,
+   80.3319
+  ],
+  "bounds": [
+   [
+    26.4004391,
+    80.2766634
+   ],
+   [
+    26.4993547,
+    80.3871426
+   ]
+  ],
+  "population": 1210000,
+  "ambulances": 12,
+  "mb": 1.7
+ },
+ {
+  "slug": "nagpur",
+  "name": "Nagpur",
+  "cc": "in",
+  "center": [
+   21.1458,
+   79.0882
+  ],
+  "bounds": [
+   [
+    21.0963384,
+    79.0351843
+   ],
+   [
+    21.1952624,
+    79.1412324
+   ]
+  ],
+  "population": 1089000,
+  "ambulances": 11,
+  "mb": 2.0
+ },
+ {
+  "slug": "indore",
+  "name": "Indore",
+  "cc": "in",
+  "center": [
+   22.7196,
+   75.8577
+  ],
+  "bounds": [
+   [
+    22.6701499,
+    75.8041343
+   ],
+   [
+    22.7690583,
+    75.911323
+   ]
+  ],
+  "population": 1089000,
+  "ambulances": 11,
+  "mb": 1.9
+ },
+ {
+  "slug": "bhopal",
+  "name": "Bhopal",
+  "cc": "in",
+  "center": [
+   23.2599,
+   77.4126
+  ],
+  "bounds": [
+   [
+    23.2104549,
+    77.3587957
+   ],
+   [
+    23.3093587,
+    77.4664342
+   ]
+  ],
+  "population": 847000,
+  "ambulances": 8,
+  "mb": 1.4
+ },
+ {
+  "slug": "patna",
+  "name": "Patna",
+  "cc": "in",
+  "center": [
+   25.5941,
+   85.1376
+  ],
+  "bounds": [
+   [
+    25.54466,
+    85.0827599
+   ],
+   [
+    25.6435567,
+    85.1924409
+   ]
+  ],
+  "population": 1210000,
+  "ambulances": 12,
+  "mb": 1.0
+ },
+ {
+  "slug": "vadodara",
+  "name": "Vadodara",
+  "cc": "in",
+  "center": [
+   22.3072,
+   73.1812
+  ],
+  "bounds": [
+   [
+    22.2622396,
+    73.1326054
+   ],
+   [
+    22.3521468,
+    73.2297989
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 1.7
+ },
+ {
+  "slug": "ludhiana",
+  "name": "Ludhiana",
+  "cc": "in",
+  "center": [
+   30.901,
+   75.8573
+  ],
+  "bounds": [
+   [
+    30.8560405,
+    75.8049042
+   ],
+   [
+    30.9459578,
+    75.9096813
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 2.0
+ },
+ {
+  "slug": "agra",
+  "name": "Agra",
+  "cc": "in",
+  "center": [
+   27.1767,
+   78.0081
+  ],
+  "bounds": [
+   [
+    27.1317345,
+    77.9575802
+   ],
+   [
+    27.221658,
+    78.0586388
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 1.2
+ },
+ {
+  "slug": "nashik",
+  "name": "Nashik",
+  "cc": "in",
+  "center": [
+   19.9975,
+   73.7898
+  ],
+  "bounds": [
+   [
+    19.9525604,
+    73.7419529
+   ],
+   [
+    20.0424314,
+    73.8376466
+   ]
+  ],
+  "population": 800000,
+  "ambulances": 8,
+  "mb": 0.9
+ },
+ {
+  "slug": "varanasi",
+  "name": "Varanasi",
+  "cc": "in",
+  "center": [
+   25.3176,
+   82.9739
+  ],
+  "bounds": [
+   [
+    25.272638,
+    82.9242021
+   ],
+   [
+    25.3625548,
+    83.0236413
+   ]
+  ],
+  "population": 1000000,
+  "ambulances": 10,
+  "mb": 1.0
+ },
+ {
+  "slug": "prayagraj",
+  "name": "Prayagraj",
+  "cc": "in",
+  "center": [
+   25.4358,
+   81.8463
+  ],
+  "bounds": [
+   [
+    25.3908461,
+    81.796518
+   ],
+   [
+    25.4807345,
+    81.8959206
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 0.9
+ },
+ {
+  "slug": "coimbatore",
+  "name": "Coimbatore",
+  "cc": "in",
+  "center": [
+   11.0168,
+   76.9558
+  ],
+  "bounds": [
+   [
+    10.9718549,
+    76.9099932
+   ],
+   [
+    11.0617646,
+    77.0016064
+   ]
+  ],
+  "population": 800000,
+  "ambulances": 8,
+  "mb": 1.0
+ },
+ {
+  "slug": "madurai",
+  "name": "Madurai",
+  "cc": "in",
+  "center": [
+   9.9252,
+   78.1198
+  ],
+  "bounds": [
+   [
+    9.8802568,
+    78.0741772
+   ],
+   [
+    9.9701644,
+    78.1653412
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 1.1
+ },
+ {
+  "slug": "tiruchirappalli",
+  "name": "Tiruchirappalli",
+  "cc": "in",
+  "center": [
+   10.7905,
+   78.7047
+  ],
+  "bounds": [
+   [
+    10.7455379,
+    78.658934
+   ],
+   [
+    10.8354182,
+    78.7504585
+   ]
+  ],
+  "population": 700000,
+  "ambulances": 8,
+  "mb": 0.8
+ },
+ {
+  "slug": "kochi",
+  "name": "Kochi",
+  "cc": "in",
+  "center": [
+   9.9312,
+   76.2673
+  ],
+  "bounds": [
+   [
+    9.8862465,
+    76.2371993
+   ],
+   [
+    9.9761576,
+    76.3128482
+   ]
+  ],
+  "population": 700000,
+  "ambulances": 8,
+  "mb": 0.4
+ },
+ {
+  "slug": "thiruvananthapuram",
+  "name": "Thiruvananthapuram",
+  "cc": "in",
+  "center": [
+   8.5241,
+   76.9366
+  ],
+  "bounds": [
+   [
+    8.4791356,
+    76.8911406
+   ],
+   [
+    8.56906,
+    76.9820638
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 1.0
+ },
+ {
+  "slug": "visakhapatnam",
+  "name": "Visakhapatnam",
+  "cc": "in",
+  "center": [
+   17.6868,
+   83.2185
+  ],
+  "bounds": [
+   [
+    17.641877,
+    83.1713103
+   ],
+   [
+    17.7317541,
+    83.265664
+   ]
+  ],
+  "population": 700000,
+  "ambulances": 8,
+  "mb": 0.5
+ },
+ {
+  "slug": "vijayawada",
+  "name": "Vijayawada",
+  "cc": "in",
+  "center": [
+   16.5062,
+   80.648
+  ],
+  "bounds": [
+   [
+    16.4613179,
+    80.6011383
+   ],
+   [
+    16.5511567,
+    80.6948604
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 0.9
+ },
+ {
+  "slug": "guwahati",
+  "name": "Guwahati",
+  "cc": "in",
+  "center": [
+   26.1445,
+   91.7362
+  ],
+  "bounds": [
+   [
+    26.0995543,
+    91.6861192
+   ],
+   [
+    26.1893913,
+    91.7862871
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 0.5
+ },
+ {
+  "slug": "bhubaneswar",
+  "name": "Bhubaneswar",
+  "cc": "in",
+  "center": [
+   20.2961,
+   85.8245
+  ],
+  "bounds": [
+   [
+    20.251137,
+    85.7766327
+   ],
+   [
+    20.3410533,
+    85.8724421
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 0.7
+ },
+ {
+  "slug": "chandigarh",
+  "name": "Chandigarh",
+  "cc": "in",
+  "center": [
+   30.7333,
+   76.7794
+  ],
+  "bounds": [
+   [
+    30.6883491,
+    76.7271037
+   ],
+   [
+    30.7782536,
+    76.8316963
+   ]
+  ],
+  "population": 800000,
+  "ambulances": 8,
+  "mb": 0.8
+ },
+ {
+  "slug": "dehradun",
+  "name": "Dehradun",
+  "cc": "in",
+  "center": [
+   30.3165,
+   78.0322
+  ],
+  "bounds": [
+   [
+    30.271534,
+    77.9801182
+   ],
+   [
+    30.361436,
+    78.0842888
+   ]
+  ],
+  "population": 500000,
+  "ambulances": 8,
+  "mb": 0.9
+ },
+ {
+  "slug": "ranchi",
+  "name": "Ranchi",
+  "cc": "in",
+  "center": [
+   23.3441,
+   85.3096
+  ],
+  "bounds": [
+   [
+    23.2991433,
+    85.2606643
+   ],
+   [
+    23.3890587,
+    85.3585666
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 0.9
+ },
+ {
+  "slug": "raipur",
+  "name": "Raipur",
+  "cc": "in",
+  "center": [
+   21.2514,
+   81.6296
+  ],
+  "bounds": [
+   [
+    21.2064383,
+    81.5813666
+   ],
+   [
+    21.2963462,
+    81.6777607
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 1.0
+ },
+ {
+  "slug": "amritsar",
+  "name": "Amritsar",
+  "cc": "in",
+  "center": [
+   31.634,
+   74.8723
+  ],
+  "bounds": [
+   [
+    31.5890991,
+    74.8195442
+   ],
+   [
+    31.6789305,
+    74.9251044
+   ]
+  ],
+  "population": 900000,
+  "ambulances": 9,
+  "mb": 1.3
+ },
+ {
+  "slug": "mysuru",
+  "name": "Mysuru",
+  "cc": "in",
+  "center": [
+   12.2958,
+   76.6394
+  ],
+  "bounds": [
+   [
+    12.2508484,
+    76.5933823
+   ],
+   [
+    12.340766,
+    76.685414
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 1.4
+ },
+ {
+  "slug": "mangaluru",
+  "name": "Mangaluru",
+  "cc": "in",
+  "center": [
+   12.9141,
+   74.856
+  ],
+  "bounds": [
+   [
+    12.8691362,
+    74.8098862
+   ],
+   [
+    12.9589207,
+    74.9021082
+   ]
+  ],
+  "population": 500000,
+  "ambulances": 8,
+  "mb": 0.4
+ },
+ {
+  "slug": "jodhpur",
+  "name": "Jodhpur",
+  "cc": "in",
+  "center": [
+   26.2389,
+   73.0243
+  ],
+  "bounds": [
+   [
+    26.1939382,
+    72.974169
+   ],
+   [
+    26.2838534,
+    73.0743478
+   ]
+  ],
+  "population": 700000,
+  "ambulances": 8,
+  "mb": 1.1
+ },
+ {
+  "slug": "gwalior",
+  "name": "Gwalior",
+  "cc": "in",
+  "center": [
+   26.2183,
+   78.1828
+  ],
+  "bounds": [
+   [
+    26.1733359,
+    78.1326847
+   ],
+   [
+    26.2632655,
+    78.2329101
+   ]
+  ],
+  "population": 700000,
+  "ambulances": 8,
+  "mb": 1.2
+ },
+ {
+  "slug": "jabalpur",
+  "name": "Jabalpur",
+  "cc": "in",
+  "center": [
+   23.1815,
+   79.9864
+  ],
+  "bounds": [
+   [
+    23.1365743,
+    79.9374911
+   ],
+   [
+    23.2263909,
+    80.0304076
+   ]
+  ],
+  "population": 700000,
+  "ambulances": 8,
+  "mb": 0.4
+ },
+ {
+  "slug": "rajkot",
+  "name": "Rajkot",
+  "cc": "in",
+  "center": [
+   22.3039,
+   70.8022
+  ],
+  "bounds": [
+   [
+    22.2589354,
+    70.7536064
+   ],
+   [
+    22.3487225,
+    70.8507935
+   ]
+  ],
+  "population": 800000,
+  "ambulances": 8,
+  "mb": 1.5
+ },
+ {
+  "slug": "meerut",
+  "name": "Meerut",
+  "cc": "in",
+  "center": [
+   28.9845,
+   77.7064
+  ],
+  "bounds": [
+   [
+    28.9395475,
+    77.6550462
+   ],
+   [
+    29.0294438,
+    77.7577943
+   ]
+  ],
+  "population": 800000,
+  "ambulances": 8,
+  "mb": 1.0
+ },
+ {
+  "slug": "srinagar",
+  "name": "Srinagar",
+  "cc": "in",
+  "center": [
+   34.0837,
+   74.7973
+  ],
+  "bounds": [
+   [
+    34.0387723,
+    74.7430194
+   ],
+   [
+    34.1286485,
+    74.8515714
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 0.7
+ },
+ {
+  "slug": "panaji",
+  "name": "Panaji (Goa)",
+  "cc": "in",
+  "center": [
+   15.4909,
+   73.8278
+  ],
+  "bounds": [
+   [
+    15.4482486,
+    73.7813595
+   ],
+   [
+    15.5358099,
+    73.8744379
+   ]
+  ],
+  "population": 300000,
+  "ambulances": 8,
+  "mb": 0.2
+ },
+ {
+  "slug": "noida",
+  "name": "Noida",
+  "cc": "in",
+  "center": [
+   28.5355,
+   77.391
+  ],
+  "bounds": [
+   [
+    28.4905516,
+    77.3398813
+   ],
+   [
+    28.5804003,
+    77.4421819
+   ]
+  ],
+  "population": 800000,
+  "ambulances": 8,
+  "mb": 0.5
+ },
+ {
+  "slug": "gurugram",
+  "name": "Gurugram",
+  "cc": "in",
+  "center": [
+   28.4595,
+   77.0266
+  ],
+  "bounds": [
+   [
+    28.4145402,
+    76.975504
+   ],
+   [
+    28.5044504,
+    77.0777428
+   ]
+  ],
+  "population": 600000,
+  "ambulances": 8,
+  "mb": 1.0
+ },
+ {
+  "slug": "thane",
+  "name": "Thane",
+  "cc": "in",
+  "center": [
+   19.2183,
+   72.9781
+  ],
+  "bounds": [
+   [
+    19.1733416,
+    72.9346709
+   ],
+   [
+    19.2632659,
+    73.0257108
+   ]
+  ],
+  "population": 1400000,
+  "ambulances": 14,
+  "mb": 0.4
  }
 ]
