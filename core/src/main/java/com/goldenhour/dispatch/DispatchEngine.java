@@ -198,17 +198,27 @@ public final class DispatchEngine {
         return new Assignment(inc.id(), a.id, a.unit, r.seconds(), h == null ? -1 : h.id, h == null ? "none" : h.name, transport, r.nodes(), reason);
     }
 
+    /** A specialty centre is worth at most this much extra driving; beyond it, stabilise at the nearest hospital. */
+    public static final double MAX_SPECIALTY_DETOUR_S = 15 * 60;
+
+    /**
+     * Destination hospital. Minor (P3/P4) or general cases go to the nearest hospital. Time-critical (P1/P2) cases that
+     * need a capability (stroke unit, cath lab, trauma, burns, maternity) go to the nearest hospital that has it,
+     * unless that is more than 15 minutes further than the nearest hospital: then the nearest one stabilises first.
+     */
     private int chooseHospital(Incident inc) {
-        int best = -1, fallback = -1;
-        double bt = Double.POSITIVE_INFINITY, ft = Double.POSITIVE_INFINITY;
+        int best = -1, nearest = -1;
+        double bt = Double.POSITIVE_INFINITY, nt = Double.POSITIVE_INFINITY;
         for (int i = 0; i < hospitals.size(); i++) {
             Hospital h = hospitals.get(i);
             if (h.freeBeds <= 0) continue;
             double t = timeToHospital.get(i)[inc.node()];
-            if (t < ft) { ft = t; fallback = i; }
+            if (t < nt) { nt = t; nearest = i; }
             if ((inc.need() == null || h.specialties.contains(inc.need())) && t < bt) { bt = t; best = i; }
         }
-        return best >= 0 ? best : fallback;
+        boolean timeCritical = inc.severity() == Severity.P1_CRITICAL || inc.severity() == Severity.P2_EMERGENT;
+        if (!timeCritical || best < 0 || bt - nt > MAX_SPECIALTY_DETOUR_S) return nearest;
+        return best;
     }
 
     private Route route(int from, int to) {

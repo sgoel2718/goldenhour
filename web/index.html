@@ -391,7 +391,7 @@ function renderDecision(d) {
     <span class="hint">needs ${esc(t.need)} · triage by ${esc(t.source)} in ${fmt(t.ms,1)} ms</span></div>`;
   if (a) {
     const slow = d.candidates.filter(c => c.ambulance !== best && c.straightLineKm < d.candidates.find(x => x.ambulance === best).straightLineKm);
-    html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. The patient goes to <b>${esc(a.hospital)}</b> because it is the nearest hospital that treats <b>${esc(t.need.toLowerCase())}</b> cases.</p>`;
+    html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. Hospital: <b>${esc(a.hospital)}</b>, ${esc(a.hospitalWhy || 'nearest suitable hospital')}.</p>`;
     const hp = a.hospitalPhone;
     html += `<div class="contacts">
       <div class="contact"><div>🚑 <b>AMB-${a.ambulance}</b> (${a.unit === 'ALS' ? 'paramedic' : 'basic'} crew)<small>Simulated unit. Real crews are reached through the ${EMERG} control room: quote ${esc(d.incident.id)}.</small></div><a class="callbtn" href="tel:${EMERG}">Call ${EMERG}</a></div>

@@ -1,7 +1,7 @@
 """Turn downloaded city road networks (data/<slug>/) into browser bundles (web/data/<slug>/city.json.gz).
 
 For each city:
-  1. hospitals.csv: kept if curated by hand (Chennai); otherwise up to 14 major hospitals are picked from the
+  1. hospitals.csv: kept if curated by hand (Chennai); otherwise up to 25 hospitals are picked from the
      OpenStreetMap facilities, preferring well-known/government/teaching hospitals, spread across the city and
      each within 150 m of a mapped road. Capabilities of auto-picked hospitals are ASSUMED (flagged in the data).
   2. demand.csv / case_mix.csv: ml/forecast/transfer.py with a population estimate for the covered area.
@@ -98,9 +98,9 @@ def pick_hospitals(city):
             cands.append((2 if MAJOR.search(name) else 1, name, lat, lon))
     cands.sort(key=lambda c: -c[0])
     chosen = []
-    for min_gap in (1500, 900, 500):              # spread out: prefer hospitals far from those already chosen
+    for min_gap in (1200, 700, 350):              # spread out: prefer hospitals far from those already chosen
         for c in cands:
-            if len(chosen) >= 14:
+            if len(chosen) >= 25:
                 break
             if c in chosen or any(x[1].lower() == c[1].lower() for x in chosen):
                 continue

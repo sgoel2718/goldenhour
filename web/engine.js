@@ -289,14 +289,23 @@
       if (!r) { r = (this.ch || this.astar).route(a, b); this.cache.set(k, r); if (this.cache.size > 20000) this.cache.delete(this.cache.keys().next().value); }
       return r;
     }
+    /** Same rule as DispatchEngine.chooseHospital; also explains the choice. */
     chooseHospital(inc) {
-      let best = -1, bt = Infinity, fb = -1, ft = Infinity;
+      let best = -1, bt = Infinity, near = -1, nt = Infinity;
       this.hospitals.forEach((h, i) => {
         const t = this.toHospital[i][inc.node];
-        if (t < ft) { ft = t; fb = i; }
+        if (t < nt) { nt = t; near = i; }
         if (h.specialties.includes(inc.need) && t < bt) { bt = t; best = i; }
       });
-      return best >= 0 ? best : fb;
+      const critical = inc.severity === 'P1_CRITICAL' || inc.severity === 'P2_EMERGENT', need = inc.need.toLowerCase(), H = i => this.hospitals[i].name;
+      let pick = near, why;
+      if (!critical || inc.need === 'GENERAL') why = `nearest hospital (${(nt / 60).toFixed(0)} min)`;
+      else if (best < 0) why = `no ${need} centre in range, so the nearest hospital (${(nt / 60).toFixed(0)} min)`;
+      else if (best === near) { pick = best; why = `nearest hospital, and it treats ${need} cases (${(nt / 60).toFixed(0)} min)`; }
+      else if (bt - nt > 15 * 60) why = `nearest hospital to stabilise first: the nearest ${need} centre (${H(best)}) is ${((bt - nt) / 60).toFixed(0)} min further`;
+      else { pick = best; why = `nearest hospital that treats ${need} cases (${(bt / 60).toFixed(0)} min); ${H(near)} is closer (${(nt / 60).toFixed(0)} min) but has no ${need} unit`; }
+      inc.hospitalWhy = why;
+      return pick;
     }
     candidates(inc, k = 8) {
       const g = this.g;
@@ -337,7 +346,7 @@
       for (let i = 0; i < r.nodes.length; i += step) path.push([g.lat[r.nodes[i]], g.lon[r.nodes[i]]]);
       const last = r.nodes[r.nodes.length - 1]; path.push([g.lat[last], g.lon[last]]);
       return { ambulance: a.id, unit: a.unit, etaMin: r.seconds / 60, hospital: h >= 0 ? this.hospitals[h].name : 'none',
-        transportMin: h >= 0 ? this.toHospital[h][inc.node] / 60 : null, hospitalPhone: h >= 0 ? this.hospitals[h].phone || '' : '', reason, path };
+        transportMin: h >= 0 ? this.toHospital[h][inc.node] / 60 : null, hospitalPhone: h >= 0 ? this.hospitals[h].phone || '' : '', hospitalWhy: inc.hospitalWhy || '', reason, path };
     }
     startJob(a, job, nodes, t, duration) {
       job.route = nodes; job.cum = new Float64Array(nodes.length);

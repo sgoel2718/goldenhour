@@ -76,7 +76,18 @@ public final class DispatchTest {
         near(180, a.transportSeconds(), 1e-9, "transport via precomputed reverse tree");
     }
 
-    public static void testBatchDispatchIsGloballyOptimal() {
+    public static void testMinorCasesGoToNearestHospitalAndLongDetoursAreAvoided() {
+        RoadGraph g = trapCity();
+        DispatchEngine e = new DispatchEngine(g, new Dijkstra(g));
+        e.addHospital(new Hospital(1, "Near general", 1, EnumSet.of(Specialty.GENERAL), 10));
+        e.addHospital(new Hospital(2, "Far trauma centre", 3, EnumSet.of(Specialty.TRAUMA, Specialty.GENERAL), 10));
+        e.addAmbulance(0, Unit.ALS, 0);
+        equal("Near general", e.dispatch(inc("sprain", 0, Severity.P3_URGENT, Specialty.TRAUMA, g)).orElseThrow().hospitalName(), "a P3 injury goes to the nearest hospital");
+        e.release(0, 0);
+        equal("Far trauma centre", e.dispatch(inc("crash", 0, Severity.P1_CRITICAL, Specialty.TRAUMA, g)).orElseThrow().hospitalName(), "a P1 trauma goes to the trauma centre (2 min further)");
+    }
+
+        public static void testBatchDispatchIsGloballyOptimal() {
         RoadGraph g = trapCity();
         DispatchEngine e = new DispatchEngine(g, new Dijkstra(g));
         e.addAmbulance(0, Unit.ALS, 1);
