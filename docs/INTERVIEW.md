@@ -2,7 +2,7 @@
 
 ## Resume bullets (pick 3–4)
 
-- **Built GoldenHour, a real-time ambulance dispatch and pre-positioning platform** (Java 21 core, Python ML). In a simulation on **Chennai's real road network** (21k junctions, OpenStreetMap) it raised the share of critical calls reached within 8 minutes from **37% to 79% with the same 20-ambulance fleet**. 13 optimised ambulances outperform 25 under the status-quo policy.
+- **Built GoldenHour, a real-time ambulance dispatch and pre-positioning platform** (Java 21 core, Python ML). In a simulation on **Chennai's real road network** (21k junctions, OpenStreetMap) it raised the share of critical calls reached within 8 minutes from **31% to 79% with the same 20-ambulance fleet**. 13 optimised ambulances outperform 25 under the status-quo policy.
 - **Implemented contraction hierarchies from scratch**, giving exact shortest paths **43× faster than Dijkstra** on Chennai (p50 26 µs, 133 nodes settled instead of 10,800). That brings the full dispatch decision to **p99 386 µs, about 6.5k decisions/s per core**. Found and fixed a non-terminating contraction caused by self-loops in real OSM data, now covered by a regression test. Verified against Dijkstra, A* and bidirectional search on randomised and real graphs.
 - **Designed a fault-tolerant dispatch service**: single-writer regional shards on a consistent-hash ring, a write-ahead log, idempotency keys, token-bucket rate limiting, and a circuit-breaker fallback around LLM triage. The service has zero third-party dependencies, 24 tests, CI and Docker.
 - **Trained and evaluated LightGBM Poisson demand forecasting on 48,812 real 911 EMS calls** with a time-based holdout. Showed it ties a separable baseline, and statistically showed that the spatial pattern of calls is stable across shifts. This explained a negative simulation result and led to a simpler production policy.
@@ -10,7 +10,7 @@
 
 ## 60-second pitch
 
-"Ambulance response time is mostly lost to decisions, not driving: sending the closest unit *by straight line*, and keeping crews parked at hospitals. I built a dispatch engine that uses exact road travel times from contraction hierarchies, which I implemented myself. It decides in under half a millisecond. Idle crews are placed with a coverage optimiser fed by a demand forecast trained on real 911 data. To measure the effect without patients, I wrote a discrete-event simulator. It replays identical call streams through each policy and reports paired confidence intervals. On Chennai's road network, critical calls reached in 8 minutes went from 37% to 79% with the same fleet. Two ideas I expected to help, shift-by-shift repositioning and continuous move-up, didn't. The forecasting analysis showed why: where emergencies happen is stable across the day. Comparing two cities also showed the demand forecast only pays off where population is concentrated (+3.2 pp in Andorra, nothing measurable in uniformly dense Chennai). So I shipped the simpler policy and kept the forecast where it earns its place."
+"Ambulance response time is mostly lost to decisions, not driving: sending the closest unit *by straight line*, and keeping crews parked at hospitals. I built a dispatch engine that uses exact road travel times from contraction hierarchies, which I implemented myself. It decides in under half a millisecond. Idle crews are placed with a coverage optimiser fed by a demand forecast trained on real 911 data. To measure the effect without patients, I wrote a discrete-event simulator. It replays identical call streams through each policy and reports paired confidence intervals. On Chennai's road network, critical calls reached in 8 minutes went from 31% to 79% with the same fleet. Two ideas I expected to help, shift-by-shift repositioning and continuous move-up, didn't. The forecasting analysis showed why: where emergencies happen is stable across the day. Comparing two cities also showed the demand forecast only pays off where population is concentrated (+3.2 pp in Andorra, nothing measurable in uniformly dense Chennai). So I shipped the simpler policy and kept the forecast where it earns its place."
 
 ## Questions to be ready for
 
@@ -21,7 +21,7 @@ I measured it. On Chennai A* settles about a third fewer nodes but is no faster,
 Property tests compare it with Dijkstra on random geometric graphs and on 300 real-network queries, checking cost, endpoints, and that the weights along the unpacked path add up to the cost. Shortcuts record their two child edges, so paths unpack exactly.
 
 **Why does road-ETA dispatch matter more in Chennai than Andorra?**
-One-way streets, flyovers and two rivers make straight-line distance a poor proxy in a dense grid: +10.7 pp of critical calls in Chennai against +3.6 pp in Andorra's open valleys.
+One-way streets, flyovers and two rivers make straight-line distance a poor proxy in a dense grid: +10.1 pp of critical calls in Chennai against +3.6 pp in Andorra's open valleys.
 
 **Why not run everything in a database with transactions?**
 Peak national load is about 45 calls/s. Throughput is not the problem; tail latency and avoiding double dispatch are. A single writer per region gives a total order of decisions with no distributed locks. Regions are sharded with consistent hashing. Durability comes from a WAL written before the acknowledgement, and a standby replays it.

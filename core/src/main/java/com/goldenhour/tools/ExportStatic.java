@@ -47,7 +47,7 @@ public final class ExportStatic {
         m.put("edges", Map.of("from", from, "to", to, "w", w));
         m.put("ch", ch.export());
         List<Object> hs = new ArrayList<>();
-        for (var h : engine.hospitals()) hs.add(Map.of("id", h.id, "name", h.name, "node", h.node, "specialties", new ArrayList<>(h.specialties), "phone", sc.phoneOf(h.id)));
+        for (var h : engine.hospitals()) hs.add(Map.of("id", h.id, "name", h.name, "node", h.node, "lat", sc.hospitalNames.isEmpty() ? g.lat(h.node) : sc.coordOf(h.id)[0], "lon", sc.hospitalNames.isEmpty() ? g.lon(h.node) : sc.coordOf(h.id)[1], "specialties", new ArrayList<>(h.specialties), "phone", sc.phoneOf(h.id)));
         m.put("hospitals", hs);
         m.put("bases", bases);
         List<Object> zones = new ArrayList<>();

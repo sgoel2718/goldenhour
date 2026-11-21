@@ -414,7 +414,7 @@
       return {
         simTime: t, clock: clock(t), speed: this.speed, autoCalls: this.autoCalls, ambulances: ambs,
         incidents: this.incidents.slice(-40).map(i => ({ ...incJson(i), ambulance: i.ambulance ?? null, responseMin: i.responseMin ?? null })),
-        hospitals: this.hospitals.map(h => ({ id: h.id, name: h.name, lat: g.lat[h.node], lon: g.lon[h.node], specialties: h.specialties, phone: h.phone || '' })),
+        hospitals: this.hospitals.map(h => ({ id: h.id, name: h.name, lat: h.lat ?? g.lat[h.node], lon: h.lon ?? g.lon[h.node], specialties: h.specialties, phone: h.phone || '' })),
         stats: { calls: this.seq, waiting: this.queue.length, busy: this.amb.filter(a => a.job && a.job.phase !== 'RETURNING').length,
           p1Within8: this.p1[1] ? this.p1[0] / this.p1[1] : null, medianResponseMin: sorted.length ? sorted[sorted.length >> 1] : null,
           dispatchP99Ms: ls.length ? +ls[Math.floor(ls.length * 0.99)].toFixed(2) : null },
@@ -443,13 +443,26 @@
     return world;
   }
   const SAVE_KEY = 'goldenhour-world-v1';
+  const MAX_SNAP_M = 300;                    // further than this from any mapped road = outside the service area
+  /** Convex hull of the road nodes (Andrew's monotone chain): the outline of the area this demo covers. */
+  function hull(g) {
+    const idx = Array.from({ length: g.n }, (_, i) => i).sort((a, b) => g.lon[a] - g.lon[b] || g.lat[a] - g.lat[b]);
+    const cross = (o, a, b) => (g.lon[a] - g.lon[o]) * (g.lat[b] - g.lat[o]) - (g.lat[a] - g.lat[o]) * (g.lon[b] - g.lon[o]);
+    const h = [];
+    for (const pass of [idx, [...idx].reverse()]) {
+      const start = h.length;
+      for (const p of pass) { while (h.length >= start + 2 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop(); h.push(p); }
+      h.pop();
+    }
+    return h.map(v => [g.lat[v], g.lon[v]]);
+  }
   function reset() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } world = null; }
   async function api(method, path, body) {
     const w = world, g = w.g, url = new URL(path, location.href), p = url.pathname.replace(/^.*\/api\/v1\//, '');
     if (p === 'info') {
       let a0 = 90, a1 = -90, o0 = 180, o1 = -180;
       for (let v = 0; v < g.n; v++) { a0 = Math.min(a0, g.lat[v]); a1 = Math.max(a1, g.lat[v]); o0 = Math.min(o0, g.lon[v]); o1 = Math.max(o1, g.lon[v]); }
-      return [200, { city: w.city, nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
+      return [200, { city: w.city, hull: hull(g), nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
     }
     if (p === 'state') {
       const st = w.state(), ids = url.searchParams.get('ids');
@@ -457,8 +470,15 @@
         .map(i => ({ ...incJson(i), ambulance: i.ambulance ?? null, responseMin: i.responseMin ?? null, hospital: i.hospital >= 0 ? w.hospitals[i.hospital].name : null }));
       return [200, st];
     }
+    if (p === 'snap') {
+      const lat = +url.searchParams.get('lat'), lon = +url.searchParams.get('lon'), v = g.snap(lat, lon);
+      const d = haversine(lat, lon, g.lat[v], g.lon[v]);
+      return [200, { lat: g.lat[v], lon: g.lon[v], distanceM: d, inside: d <= MAX_SNAP_M }];
+    }
     if (p === 'incidents' && method === 'POST') {
       if (typeof body.lat !== 'number' || typeof body.lon !== 'number') return [400, { error: 'lat/lon must be numbers' }];
+      const v = g.snap(body.lat, body.lon), off = haversine(body.lat, body.lon, g.lat[v], g.lon[v]);
+      if (off > MAX_SNAP_M) return [422, { error: `outside the service area: the nearest mapped road is ${Math.round(off)} m away`, distanceM: off }];
       const r = w.report(body.lat, body.lon, String(body.notes || '').slice(0, 1000), 'browser');
       return [r.assignment ? 201 : 202, r];
     }

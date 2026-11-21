@@ -277,7 +277,7 @@ public final class LiveFleet {
             incs.add(m);
         }
         List<Object> hs = new ArrayList<>();
-        for (var h : engine.hospitals()) hs.add(Map.of("id", h.id, "name", h.name, "lat", g.lat(h.node), "lon", g.lon(h.node), "specialties", new ArrayList<>(h.specialties), "phone", sc.phoneOf(h.id)));
+        for (var h : engine.hospitals()) hs.add(Map.of("id", h.id, "name", h.name, "lat", sc.hospitalNames.isEmpty() ? g.lat(h.node) : sc.coordOf(h.id)[0], "lon", sc.hospitalNames.isEmpty() ? g.lon(h.node) : sc.coordOf(h.id)[1], "specialties", new ArrayList<>(h.specialties), "phone", sc.phoneOf(h.id)));
         List<Double> sorted = new ArrayList<>(allResponses);
         sorted.sort(Double::compare);
         Map<String, Object> stats = new LinkedHashMap<>();

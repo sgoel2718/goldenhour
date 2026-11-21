@@ -33,6 +33,11 @@ public final class Scenario {
     /** Published phone number (official hospital website) or empty when not verified. */
     public final List<String> hospitalPhones = new ArrayList<>();
     public String name = "City", timeZone = "UTC";
+    /** A location further than this from any mapped road is outside the service area. */
+    public static final double MAX_SNAP_METERS = 300;
+
+    /** Real (unsnapped) position of a hospital, for display. */
+    public double[] coordOf(int hospitalId) { return hospitals.get(hospitalId); }
 
     public String phoneOf(int hospitalId) { return hospitalId >= 0 && hospitalId < hospitalPhones.size() ? hospitalPhones.get(hospitalId) : ""; }
 
@@ -76,8 +81,15 @@ public final class Scenario {
      */
     public void addHospitals(DispatchEngine engine) {
         if (!hospitalNames.isEmpty()) {
-            for (int i = 0; i < hospitals.size(); i++)
-                engine.addHospital(new Hospital(i, hospitalNames.get(i), engine.snap(hospitals.get(i)[0], hospitals.get(i)[1]), hospitalSpecs.get(i), 1_000_000));
+            for (int i = 0; i < hospitals.size(); i++) {
+                int node = engine.snap(hospitals.get(i)[0], hospitals.get(i)[1]);
+                double off = com.goldenhour.graph.Geo.haversineMeters(hospitals.get(i)[0], hospitals.get(i)[1], engine.graph().lat(node), engine.graph().lon(node));
+                if (off > MAX_SNAP_METERS) {                // e.g. across a river from the mapped roads: an ambulance could never reach it
+                    System.err.printf("skipping %s: nearest mapped road is %.0f m away%n", hospitalNames.get(i), off);
+                    continue;
+                }
+                engine.addHospital(new Hospital(i, hospitalNames.get(i), node, hospitalSpecs.get(i), 1_000_000));
+            }
             return;
         }
         Specialty[][] specs = {

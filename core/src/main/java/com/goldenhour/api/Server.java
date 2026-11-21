@@ -64,6 +64,7 @@ public final class Server {
     private final long started = System.currentTimeMillis();
     private final double chBuildSeconds;
     private final int replayed;
+    private final List<Object> hull;
 
     public Server(Path data, Path web, Path reports, Path walPath, String mlUrl, int ambulances, double speed, double volume, boolean autoCalls) throws IOException {
         this.web = web;
@@ -83,6 +84,7 @@ public final class Server {
         for (int i = 0; i < ambulances; i++) engine.addAmbulance(i, i % 3 == 2 ? com.goldenhour.dispatch.Model.Unit.BLS : com.goldenhour.dispatch.Model.Unit.ALS, bases[i]);
         replayed = WriteAheadLog.replay(walPath).size();
         wal = new WriteAheadLog(walPath, false);
+        hull = convexHull(g);
         fleet = new LiveFleet(engine, scenario, new Triage(mlUrl), metrics, speed, volume, autoCalls);
     }
 
@@ -129,6 +131,7 @@ public final class Server {
                 case "GET /api/v1/route" -> route(ex);
                 case "GET /api/v1/demand" -> demand(ex);
                 case "GET /api/v1/info" -> json(ex, 200, info());
+                case "GET /api/v1/snap" -> snap(ex);
                 case "POST /api/v1/sim" -> sim(ex);
                 case "GET /api/v1/reports" -> reports(ex);
                 default -> method.equals("GET") ? staticFile(ex, path) : json(ex, 404, Map.of("error", "not found"));
@@ -158,6 +161,10 @@ public final class Server {
         catch (RuntimeException e) { throw new BadRequest("body must be a JSON object"); }
         double lat = num(body, "lat"), lon = num(body, "lon");
         if (Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new BadRequest("lat/lon out of range");
+        int nearest = engine.snap(lat, lon);
+        double off = com.goldenhour.graph.Geo.haversineMeters(lat, lon, g.lat(nearest), g.lon(nearest));
+        if (off > Scenario.MAX_SNAP_METERS)
+            return json(ex, 422, Map.of("error", String.format("outside the service area: the nearest mapped road is %.0f m away", off), "distanceM", off));
         Object n = body.get("notes");
         String notes = n == null ? "" : n.toString();
         if (notes.length() > 1000) throw new BadRequest("notes too long");
@@ -226,7 +233,42 @@ public final class Server {
         double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
         for (int v = 0; v < g.nodeCount(); v++) { minLat = Math.min(minLat, g.lat(v)); maxLat = Math.max(maxLat, g.lat(v)); minLon = Math.min(minLon, g.lon(v)); maxLon = Math.max(maxLon, g.lon(v)); }
         m.put("bounds", List.of(List.of(minLat, minLon), List.of(maxLat, maxLon)));
+        m.put("hull", hull);
         return m;
+    }
+
+    /** Nearest mapped road to a point, and how far away it is (the UI refuses points outside the service area). */
+    private int snap(HttpExchange ex) throws IOException {
+        Map<String, String> q = query(ex.getRequestURI());
+        double lat = Double.parseDouble(q.getOrDefault("lat", "0")), lon = Double.parseDouble(q.getOrDefault("lon", "0"));
+        int v = engine.snap(lat, lon);
+        double d = com.goldenhour.graph.Geo.haversineMeters(lat, lon, g.lat(v), g.lon(v));
+        return json(ex, 200, Map.of("lat", g.lat(v), "lon", g.lon(v), "distanceM", d, "inside", d <= Scenario.MAX_SNAP_METERS));
+    }
+
+    /** Convex hull of all road nodes (Andrew's monotone chain, O(n log n)): the outline of the service area. */
+    static List<Object> convexHull(RoadGraph g) {
+        Integer[] idx = new Integer[g.nodeCount()];
+        for (int i = 0; i < idx.length; i++) idx[i] = i;
+        java.util.Arrays.sort(idx, (a, b) -> g.lon(a) != g.lon(b) ? Double.compare(g.lon(a), g.lon(b)) : Double.compare(g.lat(a), g.lat(b)));
+        int[] h = new int[2 * idx.length];
+        int k = 0;
+        for (int pass = 0; pass < 2; pass++) {
+            int start = k;
+            for (int j = 0; j < idx.length; j++) {
+                int p = idx[pass == 0 ? j : idx.length - 1 - j];
+                while (k >= start + 2 && cross(g, h[k - 2], h[k - 1], p) <= 0) k--;
+                h[k++] = p;
+            }
+            k--;
+        }
+        List<Object> out = new java.util.ArrayList<>();
+        for (int i = 0; i < k; i++) out.add(List.of(g.lat(h[i]), g.lon(h[i])));
+        return out;
+    }
+
+    private static double cross(RoadGraph g, int o, int a, int b) {
+        return (g.lon(a) - g.lon(o)) * (g.lat(b) - g.lat(o)) - (g.lat(a) - g.lat(o)) * (g.lon(b) - g.lon(o));
     }
 
     private String prometheus() {

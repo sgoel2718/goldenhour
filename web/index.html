@@ -147,7 +147,7 @@ tr.win td{color:var(--avail);font-weight:600}
           <span><i style="background:var(--avail)"></i>available</span><span><i style="background:var(--enroute)"></i>en route</span>
           <span><i style="background:var(--scene)"></i>on scene</span><span><i style="background:var(--transport)"></i>to hospital</span>
           <span><i style="background:var(--handover)"></i>handover</span><span><i style="background:var(--returning)"></i>returning</span>
-          <span style="flex-basis:100%">▭ dashed box = area this demo covers (central Chennai, about 6 km around T. Nagar)</span>
+          <span style="flex-basis:100%">┅ dashed outline = area this demo has roads for (central Chennai, about 6 km around T. Nagar)</span>
         </div>
       </div>
       <div class="card"><h3>Decision log</h3><div class="log" id="log"></div></div>
@@ -193,8 +193,8 @@ async function boot() {
   catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = '…or tap the spot on the map.'; $('modeTag').textContent = 'browser edition · no server'; }
   const i = (await call('GET', '/api/v1/info')).json;
   mapBounds = i.bounds;
-  L.rectangle(i.bounds, {color:css('--accent'), weight:1.5, dashArray:'6 6', fill:false, interactive:false}).addTo(map)
-    .bindTooltip('Service area covered by this demo', {sticky:true});
+  serviceArea = i.hull && i.hull.length > 2 ? i.hull : null;
+  if (serviceArea) L.polygon(serviceArea, {color:css('--accent'), weight:1.5, dashArray:'6 6', fill:false, interactive:false}).addTo(map);
   if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
   // the page may be inside an iframe (Hugging Face) that is sized after load: re-measure before fitting
   let centred = false;
@@ -228,10 +228,7 @@ $('chips').onclick = e => { if (e.target.classList.contains('chip')) $('notes').
 
 map.on('click', e => {
   if (tab === 'live') {
-    picked = e.latlng;
-    layers.pick.clearLayers();
-    L.circleMarker(picked, {radius:9, color:css('--accent'), weight:3, fillOpacity:.15}).addTo(layers.pick);
-    $('pickHint').textContent = `Location set: ${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)}`;
+    setPicked(e.latlng, `📍 Location set: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`);
   } else if (tab === 'lab') {
     if (labPts.length === 2) { labPts = []; layers.lab.clearLayers(); }
     labPts.push(e.latlng);
@@ -248,6 +245,7 @@ $('send').onclick = async () => {
     const r = await call('POST', '/api/v1/incidents', {lat:c.lat, lon:c.lng, notes:$('notes').value});
     const d = r.json;
     if (r.status === 429) { showDecision(`<div class="hint">Rate limited — try again in a second.</div>`); return; }
+    if (r.status === 422) { $('pickHint').innerHTML = `<b style="color:var(--p1)">${esc(d.error)}</b>. Pick a spot inside the dashed outline.`; return; }
     if (!r.ok) { showDecision(`<div class="hint">${esc(d.error || 'error')}</div>`); return; }
     const html = renderDecision(d);
     const a = d.assignment;
@@ -291,12 +289,24 @@ function renderDecision(d) {
 
 $('speed').onclick = async e => { const v = +e.target.dataset.s; if (v) { await call('POST', '/api/v1/sim', {speed: v}); poll(); } };
 
-let mapBounds = null;
-function setPicked(ll, text) {
-  picked = ll;
+let mapBounds = null, serviceArea = null;
+/**
+ * Accept a patient location only if a mapped road is close by (≤ 300 m). Otherwise the ambulance would be routed to the
+ * nearest mapped road, which can be across a river or a kilometre away, so we say so instead of pretending.
+ */
+async function setPicked(ll, text) {
+  const sn = (await call('GET', `/api/v1/snap?lat=${ll.lat}&lon=${ll.lng}`)).json;
   layers.pick.clearLayers();
+  if (!sn.inside) {
+    picked = null;
+    L.circleMarker(ll, {radius:9, color:css('--p1'), weight:3, fillOpacity:.1, dashArray:'3 3'}).addTo(layers.pick);
+    $('pickHint').innerHTML = `<b style="color:var(--p1)">Outside the service area.</b> The nearest road this demo has is ${Math.round(sn.distanceM)} m away. Pick a spot inside the dashed outline (central ${esc($('cityTag').textContent)}).`;
+    return false;
+  }
+  picked = ll;
   L.circleMarker(ll, {radius:9, color:css('--accent'), weight:3, fillOpacity:.15}).addTo(layers.pick);
   $('pickHint').textContent = text;
+  return true;
 }
 $('searchForm').onsubmit = async e => {
   e.preventDefault();
@@ -309,20 +319,18 @@ $('searchForm').onsubmit = async e => {
     const res = await (await fetch(url, {headers: {'Accept-Language': 'en'}})).json();
     if (!res.length) { $('pickHint').textContent = `No match for "${q}" inside the mapped area. Try a nearby landmark or tap the map.`; return; }
     const ll = L.latLng(+res[0].lat, +res[0].lon);
-    setPicked(ll, `📍 ${res[0].display_name.split(',').slice(0, 3).join(',')}`);
     map.setView(ll, Math.max(map.getZoom(), 15));
+    await setPicked(ll, `📍 ${res[0].display_name.split(',').slice(0, 3).join(',')}`);
   } catch { $('pickHint').textContent = 'Address search is unavailable right now. Tap the map instead.'; }
 };
 function useMyPosition(p) {
   const ll = L.latLng(p.coords.latitude, p.coords.longitude);
-  if (mapBounds && !L.latLngBounds(mapBounds).pad(0.02).contains(ll)) {
-    $('pickHint').textContent = `You are at ${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}, outside the mapped area (${$('cityTag').textContent}, about 6 km around the centre). Type an area or tap the map instead.`;
-    return false;
-  }
-  setPicked(ll, `📍 Using your location (±${Math.round(p.coords.accuracy)} m)`);
-  L.circle(ll, {radius: p.coords.accuracy, color:css('--accent'), weight:1, fillOpacity:.05}).addTo(layers.pick);
   map.setView(ll, 15);
-  placeName(ll.lat, ll.lng, true).then(n => { if (n && picked === ll) $('pickHint').textContent = `📍 Your location: ${n} (±${Math.round(p.coords.accuracy)} m)`; });
+  setPicked(ll, `📍 Using your location (±${Math.round(p.coords.accuracy)} m)`).then(ok => {
+    if (!ok) return;
+    L.circle(ll, {radius: p.coords.accuracy, color:css('--accent'), weight:1, fillOpacity:.05}).addTo(layers.pick);
+    placeName(ll.lat, ll.lng, true).then(n => { if (n && picked === ll) $('pickHint').textContent = `📍 Your location: ${n} (±${Math.round(p.coords.accuracy)} m)`; });
+  });
   return true;
 }
 $('locate').onclick = () => {

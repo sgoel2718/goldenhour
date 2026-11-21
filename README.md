@@ -1,6 +1,6 @@
 # 🚑 GoldenHour: real-time ambulance dispatch and pre-positioning
 
-**On the real road network of central Chennai (21,336 junctions, OpenStreetMap), GoldenHour reaches 79% of life-threatening calls within 8 minutes with 20 ambulances. Crews waiting at hospitals and dispatched by straight-line distance reach 37%.** It does this with three things: dispatch based on actual road travel time computed with contraction hierarchies, an optimiser that decides where idle crews wait, and a demand forecast trained on real 911 calls. The same code runs on a second city (Andorra's mountain roads) to show what transfers and what doesn't.
+**On the real road network of central Chennai (21,336 junctions, OpenStreetMap), GoldenHour reaches 79% of life-threatening calls within 8 minutes with 20 ambulances. Crews waiting at hospitals and dispatched by straight-line distance reach 31%.** It does this with three things: dispatch based on actual road travel time computed with contraction hierarchies, an optimiser that decides where idle crews wait, and a demand forecast trained on real 911 calls. The same code runs on a second city (Andorra's mountain roads) to show what transfers and what doesn't.
 
 > For cardiac arrest, survival falls by roughly 7–10% for every minute without CPR or defibrillation. Major trauma has a "golden hour". Most ambulance response time is not spent driving. It is lost by sending the wrong unit, or by having crews waiting in the wrong place.
 
@@ -19,18 +19,18 @@
 
 ### 1. Same fleet, better decisions (simulation, 10 seeds × 12 weeks per arm)
 
-**Chennai** (main demo). 20 ambulances, 162 demand zones, 14 major hospitals with stroke, cardiac, trauma, burns and maternity capabilities, and road speeds reduced 40% for traffic. [Full table](reports/simulation.md).
+**Chennai** (main demo). 20 ambulances, 162 demand zones, 12 major hospitals with stroke, cardiac, trauma, burns and maternity capabilities, and road speeds reduced 40% for traffic. [Full table](reports/simulation.md).
 
 | Configuration | P1 median response | **P1 reached ≤ 8 min** | Δ vs previous step (95% CI) |
 |---|---:|---:|---:|
-| Status quo: crews wait at hospitals, nearest unit by straight line | 10.1 min | **36.8%** | — |
-| + coverage-optimised bases (MEXCLP, uniform demand) | 6.6 min | **68.5%** | +31.7 pp (+30.7 … +32.8) |
-| + dispatch by real road ETA (contraction hierarchies) | 6.1 min | **79.2%** | **+10.7 pp** (+10.2 … +11.1) |
-| + bases weighted by the demand forecast | 6.3 min | 78.9% | −0.2 pp (not significant) |
-| _alt:_ re-optimise bases every 8 h shift | 6.3 min | 78.1% | −0.8 pp (not significant) |
-| _alt:_ dynamic move-up of idle units | 6.2 min | 79.6% | +0.7 pp (not significant) |
+| Status quo: crews wait at hospitals, nearest unit by straight line | 10.2 min | **30.8%** | — |
+| + coverage-optimised bases (MEXCLP, uniform demand) | 6.6 min | **68.5%** | +37.7 pp (+36.8 … +38.6) |
+| + dispatch by real road ETA (contraction hierarchies) | 6.1 min | **78.6%** | **+10.1 pp** (+9.8 … +10.5) |
+| + bases weighted by the demand forecast | 6.3 min | 78.1% | −0.5 pp (not significant) |
+| _alt:_ re-optimise bases every 8 h shift | 6.3 min | 77.3% | −0.9 pp (not significant) |
+| _alt:_ dynamic move-up of idle units | 6.2 min | 78.5% | +0.3 pp (not significant) |
 
-**Fleet sizing:** 13 optimised ambulances (54.5%) outperform 25 under the status quo (41.8%).
+**Fleet sizing:** 13 optimised ambulances (53.9%) outperform 25 under the status quo (32.3%); even 10 optimised ambulances (34.7%) do better than those 25.
 
 **Andorra** (mountain roads, 8 ambulances). [Full table](reports/simulation_andorra.md).
 
@@ -43,7 +43,7 @@
 | _alt:_ re-optimise every shift | 76.2% | −1.9 pp (−2.9 … −0.8) |
 
 **What the two cities teach:**
-- **Road-ETA dispatch matters three times more in Chennai** (+10.7 pp against +3.6 pp). A dense grid of one-way streets, flyovers and the Adyar and Cooum rivers makes "nearest by straight line" wrong far more often than open valley roads do.
+- **Road-ETA dispatch matters almost three times more in Chennai** (+10.1 pp against +3.6 pp). A dense grid of one-way streets, flyovers and the Adyar and Cooum rivers makes "nearest by straight line" wrong far more often than open valley roads do.
 - **The demand forecast only pays off where demand is concentrated.** Andorra's people live in a few valley towns, so forecast weighting adds +3.2 pp. Central Chennai is uniformly dense (no zone above 1.3% of calls), so a uniform placement is already near-optimal, and the forecast adds nothing measurable. Knowing *when* an ML component is worth deploying is part of the design.
 - **Re-positioning every shift never helped**, in either city. The forecasting analysis below explains why.
 
@@ -141,7 +141,8 @@ GH_DATA=data/pune java -jar core/out/goldenhour.jar serve
 ## Data, honestly stated
 
 - **Roads:** real OpenStreetMap networks: central Chennai (a 6 km radius around T. Nagar, built with `build_road_graph.py --point 13.05,80.24 --dist 6000 --speed-factor 0.6`) and Andorra. I keep the largest strongly connected component, so every node can reach every other node. Speeds are scaled by 0.6 in Chennai for traffic, which is an assumption.
-- **Chennai hospitals and demand:** 14 major hospitals with capabilities approximated from public information (verify before any real use). The population of about 1.9 M is an estimate for the area. Per-capita EMS demand is set to 0.35× the US county rate, because Indian per-capita EMS use is lower. That is an assumption, and it is the `volume` parameter.
+- **Chennai hospitals and demand:** 12 major hospitals with capabilities approximated from public information (verify before any real use). The population of about 1.9 M is an estimate for the area. Per-capita EMS demand is set to 0.35× the US county rate, because Indian per-capita EMS use is lower. That is an assumption, and it is the `volume` parameter.
+- **Service-area guard:** a patient location or hospital more than 300 m from any mapped road is rejected rather than silently snapped to a road that could be across a river. That guard is why MIOT, which sits on the far bank of the Adyar at the edge of the extract, is excluded. The dashboard draws the covered area as a dashed outline (convex hull of the road network).
 - **Calls:** real anonymised 911 calls from Montgomery County, PA ([Kaggle](https://www.kaggle.com/datasets/mchirico/montcoalert)). Those calls happened in Pennsylvania, not in Chennai or Andorra. So the forecasting is *validated* on the real data. What is *transferred* to the demo city is only what generalises: the hour-of-week profile, EMS calls per resident, and the case mix. The spatial distribution of demand in the demo city comes from its own residential street density.
 - **Hospital capabilities** are not tagged in OSM. The hospital closest to the city's demand centroid is treated as the full-service regional hospital. Response-time results are from simulation, not from a field trial.
 
