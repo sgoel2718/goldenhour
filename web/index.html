@@ -93,6 +93,8 @@ tr.win td{color:var(--avail);font-weight:600}
 .pulse{animation:pulse 1.2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,176,32,.9)}70%{box-shadow:0 0 0 14px rgba(255,176,32,0)}100%{box-shadow:0 0 0 0 rgba(255,176,32,0)}}
 .citysel{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-weight:600}
+.cityrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 10px;padding:8px 10px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-size:13px}
+.cityrow button{padding:4px 10px;font-size:12px;margin-left:auto}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
 .dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
@@ -130,9 +132,10 @@ tr.win td{color:var(--avail);font-weight:600}
       <div class="card track" id="track" hidden></div>
       <div class="card">
         <h3>Report an emergency</h3>
+        <div class="cityrow">🌍 City: <b id="cityNow">…</b> <button class="ghost" id="changeCity" type="button">Change city / country</button></div>
         <div class="step"><b>1 · Where is the patient?</b></div>
         <div class="row" style="flex-wrap:wrap;margin:6px 0"><button class="go" id="locate">📍 Use my current location</button></div>
-        <form id="searchForm" class="row" style="margin:6px 0"><input id="addr" placeholder="…or type an area / landmark, e.g. Mylapore tank" autocomplete="off"><button class="ghost" type="submit">Find</button></form>
+        <form id="searchForm" class="row" style="margin:6px 0"><input id="addr" placeholder="…or type an address, area or landmark (any city)" autocomplete="off"><button class="ghost" type="submit">Find</button></form>
         <div class="hint" id="pickHint">…or tap the spot on the map.</div>
         <div class="step" style="margin-top:10px"><b>2 · What happened?</b></div>
         <textarea id="notes" placeholder="What the caller says…">my dad is sweating and has crushing chest pain</textarea>
@@ -260,7 +263,7 @@ async function boot() {
   mapBounds = i.bounds;
   serviceArea = i.hull && i.hull.length > 2 ? i.hull : null;
   if (serviceArea) L.polygon(serviceArea, {color:css('--accent'), weight:1.5, dashArray:'6 6', fill:false, interactive:false}).addTo(map);
-  if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
+  if (i.city) { $('cityTag').textContent = i.city; $('cityNow').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
   if (i.emergency) { EMERG = i.emergency; $('emNum').textContent = EMERG; $('emNum').href = 'tel:' + EMERG; }
   if (i.routing) ROUTING = i.routing;
   // the page may be inside an iframe (Hugging Face) that is sized after load: re-measure before fitting
@@ -268,11 +271,13 @@ async function boot() {
   const fit = () => { map.invalidateSize(); if (!centred) map.fitBounds(i.bounds, {padding:[10,10]}); };
   fit(); setTimeout(fit, 400);
   // centre on the visitor straight away when the browser allows it (not possible inside an embedding frame)
-  if (navigator.geolocation && window.self === window.top) {
+  const pick = new URLSearchParams(location.search).get('pick');
+  if (!pick && navigator.geolocation && window.self === window.top) {
     $('pickHint').textContent = 'Finding your location…';
     navigator.geolocation.getCurrentPosition(p => { if (useMyPosition(p)) centred = true; },
       () => { $('pickHint').textContent = 'Location not shared. Type an area or tap the spot on the map.'; }, {enableHighAccuracy:true, timeout:10000});
   }
+  if (pick) { const [pa, po] = pick.split(',').map(Number); centred = true; map.setView([pa, po], 15); setPicked(L.latLng(pa, po), '📍 Patient location from your search'); }
   setInterval(poll, 1000); poll();
 }
 
@@ -381,13 +386,22 @@ $('searchForm').onsubmit = async e => {
   if (!q) return;
   $('pickHint').textContent = 'Searching…';
   const [[a0, o0], [a1, o1]] = mapBounds;
+  const nom = async extra => (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&q=${encodeURIComponent(q)}${extra}`, {headers: {'Accept-Language': 'en'}})).json();
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&bounded=1&viewbox=${o0},${a1},${o1},${a0}&q=${encodeURIComponent(q)}`;
-    const res = await (await fetch(url, {headers: {'Accept-Language': 'en'}})).json();
-    if (!res.length) { $('pickHint').textContent = `No match for "${q}" inside the mapped area. Try a nearby landmark or tap the map.`; return; }
-    const ll = L.latLng(+res[0].lat, +res[0].lon);
-    map.setView(ll, Math.max(map.getZoom(), 15));
-    await setPicked(ll, `📍 ${res[0].display_name.split(',').slice(0, 3).join(',')}`);
+    let res = await nom(`&limit=1&bounded=1&viewbox=${o0},${a1},${o1},${a0}`);           // first: inside the current city
+    if (res.length) {
+      const ll = L.latLng(+res[0].lat, +res[0].lon);
+      map.setView(ll, Math.max(map.getZoom(), 15));
+      if (await setPicked(ll, `📍 ${res[0].display_name.split(',').slice(0, 3).join(',')}`)) return;
+    }
+    res = await nom('&limit=5');                                                       // then: anywhere in the world
+    if (!res.length) { $('pickHint').textContent = `No place called "${q}" found. Try adding the city or country.`; return; }
+    $('pickHint').innerHTML = `<b>"${esc(q)}" is outside ${esc($('cityTag').textContent)}.</b> Pick the right place and GoldenHour will set up that city, with the patient there:` +
+      res.map((r, k) => `<div class="callcard" data-k="${k}">📍 ${esc(r.display_name)}</div>`).join('');
+    $('pickHint').querySelectorAll('.callcard').forEach(el => el.onclick = () => {
+      const r = res[+el.dataset.k], a = r.address || {};
+      goPlace(r.lat, r.lon, a.city || a.town || a.village || a.county || r.display_name.split(',')[0], a.country_code || '', true);
+    });
   } catch { $('pickHint').textContent = 'Address search is unavailable right now. Tap the map instead.'; }
 };
 function useMyPosition(p) {
@@ -586,9 +600,11 @@ async function poll() {
   } catch (e) { /* server restarting: keep polling */ }
 }
 // ---------------------------------------------------------------- any city in the world
-function goPlace(lat, lon, name, cc) {
-  location.search = `?place=${(+lat).toFixed(5)},${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}&cc=${encodeURIComponent(cc || '')}&r=4000`;
+function goPlace(lat, lon, name, cc, pickHere) {
+  location.search = `?place=${(+lat).toFixed(5)},${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}&cc=${encodeURIComponent(cc || '')}&r=4000` +
+    (pickHere ? `&pick=${(+lat).toFixed(5)},${(+lon).toFixed(5)}` : '');
 }
+$('changeCity').onclick = () => { $('worldCard').hidden = false; document.querySelector('aside').scrollTo({top: 0, behavior: 'smooth'}); $('worldQ').focus(); };
 async function buildAround(lat, lon) {
   $('worldOut').textContent = 'Finding the name of your area…';
   let name = 'Your area', cc = '';
