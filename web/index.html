@@ -67,6 +67,9 @@ tr.win td{color:var(--avail);font-weight:600}
 .live .steps,.track .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0 4px}
 .live .steps span,.track .steps span{flex:1;height:6px;border-radius:3px;background:var(--line)}
 .live .steps span.on,.track .steps span.on{background:var(--accent)}
+.track .steps span.cur{background:var(--accent);animation:blink 1s infinite alternate}
+.track .labels span.cur{color:var(--accent);font-weight:700}
+@keyframes blink{from{opacity:1}to{opacity:.35}}
 .live .labels,.track .labels{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;font-size:10px;line-height:1.2;color:var(--muted)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{background:none;border:0;color:var(--ink2);padding:5px 10px;cursor:pointer;font:inherit;font-size:12px}
@@ -383,8 +386,8 @@ function updateLive(s) {
     if (target) map.fitBounds(L.latLngBounds([[amb.lat, amb.lon], target]).pad(0.35), {maxZoom: 16, animate: true});
   }
   box.innerHTML = `<div class="title">${title}</div>${big ? `<div class="big">${big}</div>` : ''}${meta}
-    <div class="steps">${STEPS.map((_, i) => `<span class="${i < step || step === 5 ? 'on' : ''}"></span>`).join('')}</div>
-    <div class="labels">${STEPS.map(x => `<span>${x}</span>`).join('')}</div>
+    <div class="steps">${STEPS.map((_, i) => `<span class="${i < step || step === 5 ? 'on' : i === step ? 'cur' : ''}"></span>`).join('')}</div>
+    <div class="labels">${STEPS.map((x, i) => `<span class="${i === step && step < 5 ? 'cur' : ''}">${x}</span>`).join('')}</div>
     <div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:108">Call 108</a>${amb && !follow ? '<button class="ghost" id="followBtn">Follow ambulance</button>' : ''}<span class="hint">${s.speed === 1 ? `Real time · ${esc(s.clock)}` : `Clock running ${s.speed}× · ${esc(s.clock)}`}</span></div>`;
   const fb = $('followBtn'); if (fb) fb.onclick = () => { follow = true; poll(); };
 }
