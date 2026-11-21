@@ -401,7 +401,7 @@ function renderDecision(d) {
 
 $('speed').onclick = async e => { const v = +e.target.dataset.s; if (v) { await call('POST', '/api/v1/sim', {speed: v}); poll(); } };
 
-let mapBounds = null, serviceArea = null;
+let mapBounds = null, serviceArea = null, lastOutside = null;
 /**
  * Accept a patient location only if a mapped road is close by (≤ 300 m). Otherwise the ambulance would be routed to the
  * nearest mapped road, which can be across a river or a kilometre away, so we say so instead of pretending.
@@ -410,9 +410,10 @@ async function setPicked(ll, text) {
   const sn = (await call('GET', `/api/v1/snap?lat=${ll.lat}&lon=${ll.lng}`)).json;
   layers.pick.clearLayers();
   if (!sn.inside) {
-    picked = null;
-    L.circleMarker(ll, {radius:9, color:css('--p1'), weight:3, fillOpacity:.1, dashArray:'3 3'}).addTo(layers.pick);
-    $('pickHint').innerHTML = `<b style="color:var(--p1)">Outside the service area.</b> The nearest road this demo has is ${Math.round(sn.distanceM)} m away. Pick a spot inside the dashed outline (central ${esc($('cityTag').textContent)}).`;
+    picked = null; lastOutside = ll;
+    L.marker(ll, {icon: L.divIcon({className: '', html: '<div class="pin" style="opacity:.6">📍</div>', iconSize: [30, 30], iconAnchor: [15, 29]})}).addTo(layers.pick);
+    $('pickHint').innerHTML = `This spot is outside <b>${esc($('cityTag').textContent)}</b>'s map. <button class="go" id="setupHere" style="margin-top:6px">🌍 Set up GoldenHour here</button>`;
+    $('setupHere').onclick = () => { stashPending(addressDetails()); buildAround(ll.lat, ll.lng); };
     return false;
   }
   picked = ll;
@@ -424,6 +425,7 @@ $('searchForm').onsubmit = async e => {
   e.preventDefault();
   const q = $('addr').value.trim();
   if (!q) return;
+  if (sugg.length) { chooseSuggestion(sugg[Math.max(0, suggSel)]); return; }        // Find = take the top suggestion
   $('pickHint').textContent = 'Searching…';
   const [[a0, o0], [a1, o1]] = mapBounds;
   const nom = async extra => (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&q=${encodeURIComponent(q)}${extra}`, {headers: {'Accept-Language': 'en'}})).json();
@@ -728,8 +730,10 @@ async function chooseSuggestion(x) {
   map.setView(ll, 16);
   if (await setPicked(ll, `📍 ${x.full}`)) { $('addrDetails').open = true; return; }
   // outside the current city: offer to set up that city with the patient already pinned
-  $('pickHint').innerHTML = `<b>${esc(x.main)}</b> is outside ${esc($('cityTag').textContent)}. <button class="go" id="goThere" style="margin-top:6px">Set up ${esc(x.city)} with the patient here</button>`;
-  $('goThere').onclick = () => { stashPending({lat: x.lat, lon: x.lon, line: x.full}); goPlace(x.lat, x.lon, x.city, x.cc, true); };
+  // in another city: switch to that city automatically, with the patient pinned and the address kept
+  $('pickHint').innerHTML = `<b>${esc(x.main)}</b> is in ${esc(x.city)}. Setting up ${esc(x.city)}…`;
+  stashPending({...addressDetails(), line: x.full});
+  setTimeout(() => goPlace(x.lat, x.lon, x.city, x.cc, true), 600);
 }
 $('addr').addEventListener('input', () => {
   clearTimeout(suggTimer);
@@ -764,10 +768,12 @@ function renderSaved() {
   });
 }
 $('adSave').onclick = () => {
-  if (!picked) { $('pickHint').innerHTML = '<b style="color:var(--p2)">Set the location first</b>, then save it.'; return; }
+  const at = picked || lastOutside;
+  if (!at) { $('pickHint').innerHTML = '<b style="color:var(--p2)">Choose the place first</b> (search, your location or tap the map), then save it.'; return; }
   const label = $('adLabel').value.trim() || `Saved ${loadSaved().length + 1}`;
   const all = loadSaved().filter(x => x.label.toLowerCase() !== label.toLowerCase());
-  all.push({label, lat: picked.lat, lon: picked.lng, ctx: ctxNow(), ...addressDetails()});
+  const ctx = picked ? ctxNow() : `?place=${at.lat.toFixed(5)},${at.lng.toFixed(5)}&name=${encodeURIComponent(($('adLine').value.split(',')[1] || $('adLine').value.split(',')[0] || 'Saved place').trim())}&cc=&r=3000`;
+  all.push({label, lat: at.lat, lon: at.lng, ctx, ...addressDetails()});
   try { localStorage.setItem(ADDR_KEY, JSON.stringify(all)); } catch (e) { }
   $('adLabel').value = ''; renderSaved();
   $('pickHint').textContent = `⭐ Saved "${label}". Tap it any time to send an ambulance there.`;
