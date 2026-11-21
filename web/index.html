@@ -64,10 +64,10 @@ tr.win td{color:var(--avail);font-weight:600}
 .leaflet-container{font:inherit}
 .live{margin:10px 0;padding:10px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
 .live .now{font-weight:600;font-size:14px}
-.live .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0 4px}
-.live .steps span{flex:1;height:6px;border-radius:3px;background:var(--line)}
-.live .steps span.on{background:var(--accent)}
-.live .labels{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;font-size:10px;line-height:1.2;color:var(--muted)}
+.live .steps,.track .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:8px 0 4px}
+.live .steps span,.track .steps span{flex:1;height:6px;border-radius:3px;background:var(--line)}
+.live .steps span.on,.track .steps span.on{background:var(--accent)}
+.live .labels,.track .labels{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;font-size:10px;line-height:1.2;color:var(--muted)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{background:none;border:0;color:var(--ink2);padding:5px 10px;cursor:pointer;font:inherit;font-size:12px}
 .seg button.on{background:var(--accent);color:#1a1200;font-weight:700}
@@ -80,6 +80,13 @@ tr.win td{color:var(--avail);font-weight:600}
 .contact small{display:block;color:var(--muted)}
 .callbtn{background:var(--avail);color:#062;font-weight:700;border-radius:8px;padding:6px 10px;text-decoration:none;white-space:nowrap}
 .callbtn.alt{background:none;border:1px solid var(--line);color:var(--ink2);font-weight:500}
+.track{border:2px solid var(--accent);background:linear-gradient(180deg,rgba(255,176,32,.10),var(--panel2))}
+.track .big{display:flex;align-items:baseline;gap:10px;margin:6px 0}
+.track .big b{font:700 34px/1 "JetBrains Mono",monospace;color:var(--accent)}
+.track .title{font-weight:700;font-size:15px}
+.track .meta{color:var(--ink2);font-size:13px}
+.pulse{animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,176,32,.9)}70%{box-shadow:0 0 0 14px rgba(255,176,32,0)}100%{box-shadow:0 0 0 0 rgba(255,176,32,0)}}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
 .dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
@@ -106,6 +113,7 @@ tr.win td{color:var(--avail);font-weight:600}
   <div id="map"></div>
   <aside>
     <section class="view on" id="v-live" style="flex-direction:column;gap:14px">
+      <div class="card track" id="track" hidden></div>
       <div class="card">
         <h3>Report an emergency</h3>
         <div class="step"><b>1 · Where is the patient?</b></div>
@@ -161,7 +169,7 @@ const SEV = {P1_CRITICAL:'--p1',P2_EMERGENT:'--p2',P3_URGENT:'--p3',P4_ROUTINE:'
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (x, d=1) => x == null || isNaN(x) ? '—' : Number(x).toFixed(d);
 
-const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView([42.53, 1.55], 12);
+const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView([13.05, 80.24], 13);   // Chennai before data arrives: no flash elsewhere
 // OpenStreetMap's own tiles (no API key), darkened with a CSS filter to match the theme
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, className:'dark-tiles', attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const layers = {demand:L.layerGroup().addTo(map), routes:L.layerGroup().addTo(map), bases:L.layerGroup(), hosp:L.layerGroup().addTo(map), inc:L.layerGroup().addTo(map), amb:L.layerGroup().addTo(map), lab:L.layerGroup().addTo(map), pick:L.layerGroup().addTo(map)};
@@ -181,8 +189,15 @@ async function boot() {
   mapBounds = i.bounds;
   if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
   // the page may be inside an iframe (Hugging Face) that is sized after load: re-measure before fitting
-  const fit = () => { map.invalidateSize(); map.fitBounds(i.bounds, {padding:[10,10]}); };
-  fit(); setTimeout(fit, 400); setTimeout(fit, 1500);
+  let centred = false;
+  const fit = () => { map.invalidateSize(); if (!centred) map.fitBounds(i.bounds, {padding:[10,10]}); };
+  fit(); setTimeout(fit, 400);
+  // centre on the visitor straight away when the browser allows it (not possible inside an embedding frame)
+  if (navigator.geolocation && window.self === window.top) {
+    $('pickHint').textContent = 'Finding your location…';
+    navigator.geolocation.getCurrentPosition(p => { if (useMyPosition(p)) centred = true; },
+      () => { $('pickHint').textContent = 'Location not shared. Type an area or tap the spot on the map.'; }, {enableHighAccuracy:true, timeout:10000});
+  }
   setInterval(poll, 1000); poll();
 }
 
@@ -227,6 +242,7 @@ $('send').onclick = async () => {
     if (r.status === 429) { showDecision(`<div class="hint">Rate limited — try again in a second.</div>`); return; }
     if (!r.ok) { showDecision(`<div class="hint">${esc(d.error || 'error')}</div>`); return; }
     renderDecision(d);
+    if (d.assignment) { follow = true; $('track').hidden = false; document.querySelector('aside').scrollTo({top:0, behavior:'smooth'}); poll(); }
   } finally { btn.disabled = false; }
 };
 
@@ -239,7 +255,6 @@ function renderDecision(d) {
   let html = `<div class="row" style="flex-wrap:wrap"><span class="sev ${t.severity}">${t.severity.replace('_',' ')}</span> <b>${esc(t.category)}</b>
     <span class="hint">needs ${esc(t.need)} · triage by ${esc(t.source)} in ${fmt(t.ms,1)} ms</span></div>`;
   tracked = {id: d.incident.id, amb: a ? a.ambulance : null, hospital: a ? a.hospital : null, done: false};
-  html += `<div id="live" class="live"></div>`;
   if (a) {
     const slow = d.candidates.filter(c => c.ambulance !== best && c.straightLineKm < d.candidates.find(x => x.ambulance === best).straightLineKm);
     html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. The patient goes to <b>${esc(a.hospital)}</b> because it is the nearest hospital that treats <b>${esc(t.need.toLowerCase())}</b> cases.</p>`;
@@ -284,23 +299,23 @@ $('searchForm').onsubmit = async e => {
     map.setView(ll, Math.max(map.getZoom(), 15));
   } catch { $('pickHint').textContent = 'Address search is unavailable right now. Tap the map instead.'; }
 };
+function useMyPosition(p) {
+  const ll = L.latLng(p.coords.latitude, p.coords.longitude);
+  if (mapBounds && !L.latLngBounds(mapBounds).pad(0.02).contains(ll)) {
+    $('pickHint').textContent = `You are at ${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}, outside the mapped area (${$('cityTag').textContent}, about 6 km around the centre). Type an area or tap the map instead.`;
+    return false;
+  }
+  setPicked(ll, `📍 Using your location (±${Math.round(p.coords.accuracy)} m)`);
+  L.circle(ll, {radius: p.coords.accuracy, color:css('--accent'), weight:1, fillOpacity:.05}).addTo(layers.pick);
+  map.setView(ll, 15);
+  placeName(ll.lat, ll.lng, true).then(n => { if (n && picked === ll) $('pickHint').textContent = `📍 Your location: ${n} (±${Math.round(p.coords.accuracy)} m)`; });
+  return true;
+}
 $('locate').onclick = () => {
   if (!navigator.geolocation) { $('pickHint').textContent = 'Your browser does not share location. Type an area or tap the map instead.'; return; }
   const inFrame = window.self !== window.top;
   $('pickHint').textContent = 'Finding your location…';
-  navigator.geolocation.getCurrentPosition(p => {
-    const ll = L.latLng(p.coords.latitude, p.coords.longitude);
-    if (mapBounds && !L.latLngBounds(mapBounds).pad(0.02).contains(ll)) {
-      $('pickHint').textContent = `You are at ${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}, outside the mapped area (${$('cityTag').textContent}, about 6 km around the centre). Type an area or tap the map instead.`;
-      return;
-    }
-    picked = ll;
-    layers.pick.clearLayers();
-    L.circleMarker(ll, {radius:9, color:css('--accent'), weight:3, fillOpacity:.15}).addTo(layers.pick);
-    L.circle(ll, {radius: p.coords.accuracy, color:css('--accent'), weight:1, fillOpacity:.05}).addTo(layers.pick);
-    map.setView(ll, Math.max(map.getZoom(), 15));
-    $('pickHint').textContent = `Using your location: ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)} (±${Math.round(p.coords.accuracy)} m)`;
-  }, err => {
+  navigator.geolocation.getCurrentPosition(p => useMyPosition(p), err => {
     $('pickHint').innerHTML = inFrame
       ? `This page is embedded (Hugging Face), and embedded pages are not allowed to ask for location. <a href="${location.href}" target="_blank" rel="noopener" style="color:var(--accent)">Open the full page</a> and press the button again, or type an area below.`
       : 'Location permission was denied or unavailable. Allow location for this site in the browser, or type an area / tap the map.';
@@ -315,25 +330,63 @@ $('auto').onclick = async () => {
 // ---------------------------------------------------------------- live tracking of the call you reported
 let tracked = null;
 const STEPS = ['Dispatched', 'Driving to patient', 'Treating on scene', 'To hospital', 'Handover'];
+let follow = false, placeCache = {t: 0, key: '', name: ''};
+map.on('dragstart', () => { follow = false; });
+
+/** Street / area name for a point (OpenStreetMap Nominatim), at most one lookup every 15 s. */
+async function placeName(lat, lon, force) {
+  const now = Date.now();
+  if (!force && now - placeCache.t < 15000) return placeCache.name;
+  if (!force) placeCache.t = now;
+  try {
+    const r = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=${lat}&lon=${lon}`, {headers: {'Accept-Language': 'en'}})).json();
+    const a = r.address || {};
+    const name = [a.road || a.pedestrian || a.neighbourhood, a.suburb || a.city_district || a.quarter].filter(Boolean).join(', ');
+    if (!force) placeCache.name = name;
+    return name;
+  } catch { return force ? '' : placeCache.name; }
+}
+
+const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+const pathKm = path => { let m = 0; for (let i = 1; i < (path || []).length; i++) m += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i])); return m / 1000; };
+
 function updateLive(s) {
-  const box = $('live');
+  const box = $('track');
   if (!tracked || !box) return;
   const inc = s.incidents.find(i => i.id === tracked.id);
   const amb = s.ambulances.find(a => a.incident === tracked.id && a.phase !== 'RETURNING');
-  const left = x => `${fmt(x.secondsLeft / 60)} min`;
-  let step = 0, now;
+  const realSec = x => x.secondsLeft / s.speed;                    // wall-clock seconds at the current clock speed
+  let step = 0, title, big = '', meta = '';
   if (amb) {
-    const map = {EN_ROUTE: [1, `🚑 AMB-${amb.id} is driving to the patient: arrives in ${left(amb)}`],
-                 ON_SCENE: [2, `🩺 Paramedics are treating the patient: leaving in ${left(amb)}`],
-                 TRANSPORTING: [3, `🏥 Taking the patient to ${esc(tracked.hospital)}: ${left(amb)} to go`],
-                 HANDOVER: [4, `Handing the patient over to the hospital team: ${left(amb)}`]};
-    [step, now] = map[amb.phase] || [0, amb.phase];
-  } else if (inc && inc.ambulance == null) { now = `⏳ Every ambulance is busy, so the call is queued by priority (${s.stats.waiting} waiting)`; }
-  else if (inc && inc.responseMin != null) { step = 5; now = `✅ Done. The ambulance reached the patient in ${fmt(inc.responseMin)} min and is returning to base.`; }
-  else { step = 5; now = '✅ Done.'; }
-  const resp = inc && inc.responseMin != null ? `<div class="hint">Response time: <b>${fmt(inc.responseMin)} min</b> ${inc.responseMin <= 8 ? '(within the 8-min target ✓)' : '(over the 8-min target)'}</div>` : '';
-  box.innerHTML = `<div class="now">${now}</div><div class="steps">${STEPS.map((_, i) => `<span class="${i < step || step === 5 ? 'on' : ''}"></span>`).join('')}</div>
-    <div class="labels">${STEPS.map(x => `<span>${x}</span>`).join('')}</div>${resp}<div class="hint" style="margin-top:4px">${s.speed === 1 ? `Real time · local clock ${esc(s.clock)}` : `Clock ${esc(s.clock)} · running ${s.speed}× faster than real time`}</div>`;
+    step = {EN_ROUTE: 1, ON_SCENE: 2, TRANSPORTING: 3, HANDOVER: 4}[amb.phase] || 0;
+    if (amb.phase === 'EN_ROUTE') {
+      const km = pathKm(amb.path);
+      title = `🚑 Ambulance AMB-${amb.id} is on the way`;
+      big = `<b>${mmss(realSec(amb))}</b><span class="meta">to reach you · ${fmt(km, 1)} km by road</span>`;
+      placeName(amb.lat, amb.lon).then(n => { const el = $('ambWhere'); if (el && n) el.textContent = `Now near ${n}`; });
+      meta = `<div class="meta" id="ambWhere">Now at ${amb.lat.toFixed(4)}, ${amb.lon.toFixed(4)}</div>`;
+    } else if (amb.phase === 'ON_SCENE') {
+      title = '🩺 The ambulance has arrived. Paramedics are with the patient';
+      big = `<b>${mmss(realSec(amb))}</b><span class="meta">until leaving for hospital</span>`;
+    } else if (amb.phase === 'TRANSPORTING') {
+      title = `🏥 On the way to ${esc(tracked.hospital)}`;
+      big = `<b>${mmss(realSec(amb))}</b><span class="meta">to hospital · ${fmt(pathKm(amb.path), 1)} km</span>`;
+    } else {
+      title = `Handing over to the ${esc(tracked.hospital)} team`;
+      big = `<b>${mmss(realSec(amb))}</b><span class="meta">remaining</span>`;
+    }
+  } else if (inc && inc.ambulance == null) { title = `⏳ All ambulances are busy. Your call is queued by priority (${s.stats.waiting} waiting)`; }
+  else if (inc && inc.responseMin != null) { step = 5; title = `✅ Done. The ambulance reached the patient in ${fmt(inc.responseMin)} min`; }
+  else { step = 5; title = '✅ Done.'; }
+  if (follow && amb && tab === 'live') {
+    const target = amb.phase === 'TRANSPORTING' && amb.path ? amb.path[amb.path.length - 1] : inc ? [inc.lat, inc.lon] : null;
+    if (target) map.fitBounds(L.latLngBounds([[amb.lat, amb.lon], target]).pad(0.35), {maxZoom: 16, animate: true});
+  }
+  box.innerHTML = `<div class="title">${title}</div>${big ? `<div class="big">${big}</div>` : ''}${meta}
+    <div class="steps">${STEPS.map((_, i) => `<span class="${i < step || step === 5 ? 'on' : ''}"></span>`).join('')}</div>
+    <div class="labels">${STEPS.map(x => `<span>${x}</span>`).join('')}</div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:108">Call 108</a>${amb && !follow ? '<button class="ghost" id="followBtn">Follow ambulance</button>' : ''}<span class="hint">${s.speed === 1 ? `Real time · ${esc(s.clock)}` : `Clock running ${s.speed}× · ${esc(s.clock)}`}</span></div>`;
+  const fb = $('followBtn'); if (fb) fb.onclick = () => { follow = true; poll(); };
 }
 
 // ---------------------------------------------------------------- live state
@@ -350,6 +403,8 @@ async function loadDemand() {
 const ambMarkers = {};
 function ambIcon(a) {
   const c = css(PHASE[a.phase] || '--avail');
+  if (tracked && a.incident === tracked.id && a.phase !== 'RETURNING')
+    return L.divIcon({className:'', html:`<div class="amb-icon pulse" style="background:${c};width:64px;font-size:12px;line-height:22px;border-color:#fff">🚑 ${a.unit}${a.id}</div>`, iconSize:[64,22], iconAnchor:[32,11]});
   return L.divIcon({className:'', html:`<div class="amb-icon" style="background:${c};width:40px">${a.unit}${a.id}</div>`, iconSize:[40,16], iconAnchor:[20,8]});
 }
 
@@ -377,7 +432,7 @@ async function poll() {
     s.ambulances.forEach(a => {
       seen.add(a.id);
       if (!ambMarkers[a.id]) ambMarkers[a.id] = L.marker([a.lat, a.lon]).addTo(layers.amb);
-      ambMarkers[a.id].setLatLng([a.lat, a.lon]).setIcon(ambIcon(a))
+      ambMarkers[a.id].setLatLng([a.lat, a.lon]).setIcon(ambIcon(a)).setZIndexOffset(tracked && a.incident === tracked.id ? 1000 : 0)
         .bindTooltip(`AMB-${a.id} (${a.unit}) · ${a.phase}${a.incident ? ' · ' + a.incident : ''}${a.secondsLeft ? ' · ' + fmt(a.secondsLeft/60) + ' min left' : ''}`);
       if (a.path && $('l-routes').checked) L.polyline(a.path, {live:true, color:css(PHASE[a.phase]), weight:3, opacity:.75, dashArray: a.phase === 'RETURNING' ? '4 6' : null}).addTo(layers.routes);
       L.circleMarker(a.base, {radius:5, color:'#fff', weight:1, fillColor:'#555', fillOpacity:1}).bindTooltip(`base of AMB-${a.id}`).addTo(layers.bases);
