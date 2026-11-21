@@ -429,20 +429,32 @@
 
   // ------------------------------------------------------------------ API facade (same paths/payloads as the Java server)
   let world = null;
-  async function init(base = 'data/') {
-    const d = await (await fetch(base + 'city.json')).json();
-    world = new World(d);
+  /** Load a city bundle: gzip-compressed JSON inflated in the browser (DecompressionStream), plain JSON as fallback. */
+  async function loadBundle(base) {
     try {
-      const sn = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      const r = await fetch(base + 'city.json.gz');
+      if (r.ok && 'DecompressionStream' in window) {
+        const text = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        return JSON.parse(text);
+      }
+    } catch (e) { /* fall through to plain JSON */ }
+    return (await fetch(base + 'city.json')).json();
+  }
+  let saveKey = 'goldenhour-world-v1';
+  async function init(base = 'data/', key = 'default') {
+    const d = await loadBundle(base);
+    world = new World(d);
+    saveKey = 'goldenhour-world-v1-' + key;              // each city keeps its own live world
+    try {
+      const sn = JSON.parse(localStorage.getItem(saveKey) || 'null');
       if (sn && sn.v === 1 && Date.now() - sn.savedAt < 6 * 3600e3 && sn.amb.length === world.amb.length) world.restore(sn);
     } catch (e) { /* storage blocked or old format: start fresh */ }
-    const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(world.snapshot())); } catch (e) { /* private mode */ } };
-    setInterval(() => world.tick(0.2 * world.speed), 200);
+    const save = () => { try { if (world) localStorage.setItem(saveKey, JSON.stringify(world.snapshot())); } catch (e) { /* private mode */ } };
+    setInterval(() => world && world.tick(0.2 * world.speed), 200);
     setInterval(save, 2000);
     addEventListener('pagehide', save);
     return world;
   }
-  const SAVE_KEY = 'goldenhour-world-v1';
   const MAX_SNAP_M = 300;                    // further than this from any mapped road = outside the service area
   /** Convex hull of the road nodes (Andrew's monotone chain): the outline of the area this demo covers. */
   function hull(g) {
@@ -456,7 +468,7 @@
     }
     return h.map(v => [g.lat[v], g.lon[v]]);
   }
-  function reset() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } world = null; }
+  function reset() { try { localStorage.removeItem(saveKey); } catch (e) { } world = null; }
   async function api(method, path, body) {
     const w = world, g = w.g, url = new URL(path, location.href), p = url.pathname.replace(/^.*\/api\/v1\//, '');
     if (p === 'info') {

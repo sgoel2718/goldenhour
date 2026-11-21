@@ -92,6 +92,7 @@ tr.win td{color:var(--avail);font-weight:600}
 .callcard.sel{border:2px solid var(--accent);cursor:default}
 .pulse{animation:pulse 1.2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,176,32,.9)}70%{box-shadow:0 0 0 14px rgba(255,176,32,0)}100%{box-shadow:0 0 0 0 rgba(255,176,32,0)}}
+.citysel{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-weight:600}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
 .dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
@@ -102,6 +103,7 @@ tr.win td{color:var(--avail);font-weight:600}
 <body>
 <header>
   <div class="brand"><span class="dot"></span>GoldenHour <small>real-time ambulance dispatch · <span id="cityTag">real</span> road network · <span id="modeTag">Java server</span> · <a href="https://github.com/sgoel2718/goldenhour" target="_blank" rel="noopener" style="color:inherit">GitHub</a></small></div>
+  <select id="citySel" class="citysel" title="City" hidden></select>
   <nav><button data-tab="live" class="on">Live dispatch</button><button data-tab="lab">Routing lab</button><button data-tab="results">Results</button></nav>
   <div class="kpis">
     <div class="kpi"><b id="k-clock">—</b><span id="k-clock-l">clock</span></div>
@@ -147,7 +149,7 @@ tr.win td{color:var(--avail);font-weight:600}
           <span><i style="background:var(--avail)"></i>available</span><span><i style="background:var(--enroute)"></i>en route</span>
           <span><i style="background:var(--scene)"></i>on scene</span><span><i style="background:var(--transport)"></i>to hospital</span>
           <span><i style="background:var(--handover)"></i>handover</span><span><i style="background:var(--returning)"></i>returning</span>
-          <span style="flex-basis:100%">┅ dashed outline = area this demo has roads for (central Chennai, about 6 km around T. Nagar)</span>
+          <span style="flex-basis:100%">┅ dashed outline = area this demo has roads for (the central part of the selected city)</span>
         </div>
       </div>
       <div class="card"><h3>Decision log</h3><div class="log" id="log"></div></div>
@@ -168,6 +170,11 @@ tr.win td{color:var(--avail);font-weight:600}
 <script src="engine.js"></script>
 <script>
 const API = '';
+// City: ?city=… in the URL, else the last one chosen, else Chennai (then the nearest city to the visitor, if they allow location).
+const CITY_CENTRES = {chennai:[13.05,80.232], bengaluru:[12.9716,77.5946], mumbai:[19.06,72.87], delhi:[28.6139,77.209], hyderabad:[17.385,78.4867], kolkata:[22.5726,88.3639], pune:[18.5204,73.8567]};
+const urlCity = new URLSearchParams(location.search).get('city');
+let storedCity = null; try { storedCity = localStorage.getItem('goldenhour-city'); } catch (e) { }
+const CITY = (urlCity || storedCity || 'chennai').toLowerCase();
 const $ = id => document.getElementById(id);
 const PHASE = {AVAILABLE:'--avail',EN_ROUTE:'--enroute',ON_SCENE:'--scene',TRANSPORTING:'--transport',HANDOVER:'--handover',RETURNING:'--returning'};
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -175,7 +182,7 @@ const SEV = {P1_CRITICAL:'--p1',P2_EMERGENT:'--p2',P3_URGENT:'--p3',P4_ROUTINE:'
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (x, d=1) => x == null || isNaN(x) ? '—' : Number(x).toFixed(d);
 
-const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView([13.05, 80.24], 13);   // Chennai before data arrives: no flash elsewhere
+const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView(CITY_CENTRES[CITY] || CITY_CENTRES.chennai, 13);   // the chosen city before data arrives: no flash elsewhere
 // OpenStreetMap's own tiles (no API key), darkened with a CSS filter to match the theme
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, className:'dark-tiles', attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const layers = {demand:L.layerGroup().addTo(map), routes:L.layerGroup().addTo(map), bases:L.layerGroup(), hosp:L.layerGroup().addTo(map), inc:L.layerGroup().addTo(map), amb:L.layerGroup().addTo(map), lab:L.layerGroup().addTo(map), pick:L.layerGroup().addTo(map)};
@@ -190,7 +197,32 @@ async function call(method, path, body) {
 }
 async function boot() {
   try { const r = await fetch(API + '/api/v1/info'); if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw 0; }
-  catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = '…or tap the spot on the map.'; $('modeTag').textContent = 'browser edition · no server'; }
+  catch {
+    MODE = 'browser'; $('modeTag').textContent = 'browser edition · no server';
+    let cities = [];
+    try { const r = await fetch('data/cities.json'); if (r.ok) cities = await r.json(); } catch (e) { }
+    if (cities.length) {
+      const sel = $('citySel');
+      sel.innerHTML = cities.map(c => `<option value="${c.slug}">${esc(c.name)}</option>`).join('');
+      const city = cities.find(c => c.slug === CITY) || cities[0];
+      sel.value = city.slug; sel.hidden = false;
+      sel.onchange = () => { try { localStorage.setItem('goldenhour-city', sel.value); } catch (e) { } location.search = '?city=' + sel.value; };
+      // first visit with no choice yet: jump to the city nearest to the visitor
+      if (!urlCity && !storedCity && navigator.geolocation && window.self === window.top) {
+        navigator.geolocation.getCurrentPosition(p => {
+          const near = cities.map(c => [c, Math.hypot(c.center[0] - p.coords.latitude, c.center[1] - p.coords.longitude)]).sort((a, b) => a[1] - b[1])[0][0];
+          try { localStorage.setItem('goldenhour-city', near.slug); } catch (e) { }
+          if (near.slug !== city.slug) location.replace('?city=' + near.slug);
+        }, () => { }, {timeout: 8000});
+      }
+      $('pickHint').textContent = `Loading ${city.name}'s road network into your browser (${city.mb} MB)…`;
+      await GH.init(`data/${city.slug}/`, city.slug);
+    } else {
+      $('pickHint').textContent = 'Loading road network into your browser…';
+      await GH.init();
+    }
+    $('pickHint').textContent = '…or tap the spot on the map.';
+  }
   const i = (await call('GET', '/api/v1/info')).json;
   mapBounds = i.bounds;
   serviceArea = i.hull && i.hull.length > 2 ? i.hull : null;
@@ -271,7 +303,7 @@ function renderDecision(d) {
     const hp = a.hospitalPhone;
     html += `<div class="contacts">
       <div class="contact"><div>🚑 <b>AMB-${a.ambulance}</b> (${a.unit === 'ALS' ? 'paramedic' : 'basic'} crew)<small>Simulated unit. Real crews are reached through the 108 control room: quote ${esc(d.incident.id)}.</small></div><a class="callbtn" href="tel:108">Call 108</a></div>
-      <div class="contact"><div>🏥 <b>${esc(a.hospital)}</b><small>${hp ? 'Number from the hospital\'s official website' : 'Number not verified here: opens Google Maps with the hospital\'s listing and phone'}</small></div>${hp ? `<a class="callbtn" href="tel:${hp.replace(/[^0-9+]/g, '')}">Call ${esc(hp)}</a>` : ''}<a class="callbtn alt" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.hospital + ' Chennai')}">Maps</a></div>
+      <div class="contact"><div>🏥 <b>${esc(a.hospital)}</b><small>${hp ? 'Number from the hospital\'s official website' : 'Number not verified here: opens Google Maps with the hospital\'s listing and phone'}</small></div>${hp ? `<a class="callbtn" href="tel:${hp.replace(/[^0-9+]/g, '')}">Call ${esc(hp)}</a>` : ''}<a class="callbtn alt" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.hospital + ' ' + $('cityTag').textContent)}">Maps</a></div>
     </div>`;
     html += `<p style="margin:8px 0"><b>AMB-${a.ambulance}</b> (${a.unit}) dispatched · ETA <b>${fmt(a.etaMin)} min</b> → ${esc(a.hospital)} (+${fmt(a.transportMin)} min) · decided in ${fmt(d.dispatchMs,2)} ms</p>`;
     if (a.path && a.path.length) { const pl = L.polyline(a.path, {color:css('--accent'), weight:5, opacity:.9}).addTo(layers.routes); setTimeout(() => layers.routes.removeLayer(pl), 6000); }
@@ -372,7 +404,7 @@ const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(s
 const pathKm = path => { let m = 0; for (let i = 1; i < (path || []).length; i++) m += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i])); return m / 1000; };
 
 // Every call you send is kept (in this browser) until it is finished, so a refresh or a second call never loses one.
-const CALLS_KEY = 'goldenhour-mycalls-v1';
+const CALLS_KEY = 'goldenhour-mycalls-v1-' + CITY;
 let myCalls = [], selectedId = null;
 try { myCalls = JSON.parse(localStorage.getItem(CALLS_KEY) || '[]'); } catch (e) { myCalls = []; }
 const saveCalls = () => { try { localStorage.setItem(CALLS_KEY, JSON.stringify(myCalls)); } catch (e) { } };
@@ -493,7 +525,7 @@ async function poll() {
     document.querySelectorAll('#speed button').forEach(b => b.classList.toggle('on', +b.dataset.s === s.speed));
 
     if (layers.hosp.getLayers().length === 0) s.hospitals.forEach(h => L.marker([h.lat, h.lon], {icon:L.divIcon({className:'', html:'<div style="width:20px;height:20px;border-radius:5px;background:#fff;color:#d00;font:900 16px/20px sans-serif;text-align:center">+</div>', iconSize:[20,20], iconAnchor:[10,10]})})
-      .bindPopup(`<b>${esc(h.name)}</b><br>${h.specialties.join(', ')}<br>${h.phone ? `📞 <a href="tel:${h.phone.replace(/[^0-9+]/g, '')}">${esc(h.phone)}</a> · ` : ''}<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(h.name + ' Chennai')}">Google Maps</a>`).addTo(layers.hosp));
+      .bindPopup(`<b>${esc(h.name)}</b><br>${h.specialties.join(', ')}<br>${h.phone ? `📞 <a href="tel:${h.phone.replace(/[^0-9+]/g, '')}">${esc(h.phone)}</a> · ` : ''}<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(h.name + ' ' + $('cityTag').textContent)}">Google Maps</a>`).addTo(layers.hosp));
 
     layers.routes.eachLayer(l => { if (l.options.live) layers.routes.removeLayer(l); });
     layers.bases.clearLayers();
