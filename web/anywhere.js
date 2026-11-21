@@ -29,6 +29,7 @@
     const t0 = performance.now(), ctrls = OVERPASS.map(() => new AbortController());
     let bytes = 0;
     const tick = setInterval(() => progress(`Downloading ${label} from OpenStreetMap… ${((performance.now() - t0) / 1000).toFixed(0)} s${bytes ? ` · ${(bytes / 1e6).toFixed(1)} MB` : ''}`), 500);
+    const giveUp = setTimeout(() => ctrls.forEach(c => c.abort()), 120000);   // never wait forever on a stuck server
     const one = async (url, k) => {
       const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctrls[k].signal,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
@@ -42,7 +43,7 @@
       return await Promise.any(OVERPASS.map(one));
     } catch (e) {
       throw new Error('OpenStreetMap servers are busy right now. Please try again in a minute.');
-    } finally { clearInterval(tick); }
+    } finally { clearInterval(tick); clearTimeout(giveUp); }
   }
 
   function speedOf(tags, cls) {

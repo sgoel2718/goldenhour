@@ -118,6 +118,12 @@ tr.win td{color:var(--avail);font-weight:600}
 .phonebar button{margin-left:auto;padding:2px 9px}
 #mainLive{position:relative}
 @media (max-width:900px){.phone{position:fixed;left:8px;right:8px;width:auto;bottom:8px;max-height:60vh}}
+.buildov{position:absolute;inset:0;z-index:950;display:flex;align-items:center;justify-content:center;background:rgba(11,15,20,.72);backdrop-filter:blur(2px);padding:16px}
+.buildcard{max-width:460px;width:100%;background:var(--panel);border:2px solid var(--accent);border-radius:16px;padding:20px}
+.bstep{padding:6px 0;color:var(--muted)}
+.bstep.cur{color:var(--ink);font-weight:600}
+.bstep.done{color:var(--ink2)}
+.bstep small{color:var(--accent);font-weight:500}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
 .dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
@@ -268,11 +274,14 @@ async function boot() {
         $('track').hidden = true;
         try {
           const model = await (await fetch('data/world_model.json')).json();
-          d = await GHWorld.buildCity({lat: plat, lon: plon, radius, name, cc}, msg => { $('pickHint').textContent = msg; }, model);
+          const ov = buildOverlay(name);
+          d = await GHWorld.buildCity({lat: plat, lon: plon, radius, name, cc}, ov.progress, model);
+          ov.done();
           GHWorld.cachePut(key, d);
         } catch (err) {
-          $('pickHint').innerHTML = `<b style="color:var(--p1)">Could not build ${esc(name)}:</b> ${esc(err.message)}`;
-          $('worldCard').hidden = false; return;
+          buildOverlayError(name, err.message);
+          $('pickHint').innerHTML = `<b style="color:var(--p1)">Could not set up ${esc(name)}:</b> ${esc(err.message)}`;
+          return;
         }
       }
       await GH.init(null, key, d);
@@ -658,6 +667,37 @@ async function poll() {
     broadcastToCrew(s);
   } catch (e) { /* server restarting: keep polling */ }
 }
+// ---------------------------------------------------------------- 'setting up this city' overlay (first visit to a live-built city)
+const BUILD_STEPS = [['Downloading', 'Download roads and hospitals from OpenStreetMap'], ['Building', 'Build the road network'],
+  ['Estimating', 'Estimate where emergencies happen'], ['Choosing', 'Choose hospitals'], ['Placing', 'Place the ambulances']];
+function buildOverlay(name) {
+  const el = document.createElement('div'); el.id = 'buildOv'; el.className = 'buildov';
+  $('mainLive').appendChild(el);
+  let step = 0, detail = '';
+  const draw = () => {
+    el.innerHTML = `<div class="buildcard"><h2 style="margin:0 0 4px">🌍 Setting up ${esc(name)}</h2>
+      <p class="hint" style="margin:0 0 12px">First visit only: GoldenHour builds this city's dispatch system from live map data. Next time it opens instantly.</p>
+      ${BUILD_STEPS.map(([, label], i) => `<div class="bstep ${i < step ? 'done' : i === step ? 'cur' : ''}">${i < step ? '✅' : i === step ? '⏳' : '○'} ${label}${i === step && detail ? `<small> · ${esc(detail)}</small>` : ''}</div>`).join('')}
+      <p class="hint" style="margin:12px 0 0">Usually 10–40 s. The free map servers are sometimes busy; if so you'll get a retry button.</p></div>`;
+  };
+  draw();
+  return {
+    progress(msg) {
+      const k = BUILD_STEPS.findIndex(([kw]) => msg.startsWith(kw));
+      if (k >= 0) step = Math.max(step, k);
+      detail = k === 0 ? (msg.match(/…\s*(.*)$/) || [])[1] || '' : '';
+      draw();
+    },
+    done() { el.remove(); }
+  };
+}
+function buildOverlayError(name, message) {
+  const el = $('buildOv') || Object.assign(document.createElement('div'), {id: 'buildOv', className: 'buildov'});
+  if (!el.parentNode) $('mainLive').appendChild(el);
+  el.innerHTML = `<div class="buildcard"><h2 style="margin:0 0 6px">Couldn't set up ${esc(name)}</h2><p>${esc(message)}</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="go" onclick="location.reload()">↻ Try again</button><button class="ghost" onclick="location.search='?city=chennai'">Back to Chennai</button></div></div>`;
+}
+
 // ---------------------------------------------------------------- any city in the world
 function goPlace(lat, lon, name, cc, pickHere) {
   location.search = `?place=${(+lat).toFixed(5)},${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}&cc=${encodeURIComponent(cc || '')}&r=3000` +
