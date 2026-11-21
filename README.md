@@ -130,6 +130,11 @@ scripts/reproduce.sh
 
 The emergency number shown follows the country. The built city is cached in IndexedDB, so a refresh doesn't download it again. Cities built live route with A*. Contraction-hierarchy preprocessing is done offline in Java for the prebuilt cities (`web/anywhere.js`).
 
+**Address search, saved addresses and a crew app.**
+- Address search suggests places as you type, like Google Maps (Photon/OpenStreetMap), ranked near the map centre. A place in another city offers to set that city up, with the patient already pinned.
+- Address details for the crew (flat/floor, landmark, contact phone, note) travel with the call. Addresses can be saved as ⭐ Home, Office and so on, on the device.
+- Each dispatch is pushed to a **crew app** (`?crew=<ambulance id>`). It shows an alarm and vibrates, with the job, address details, a Navigate button (Google Maps directions), Call patient / Call hospital, and an **Acknowledge** button whose acknowledgement shows up on the dispatcher's screen. In the static demo the push travels between browser tabs on one device (BroadcastChannel). A production deployment would push from the dispatch server to crew tablets (FCM/APNs or WebSocket), with radio as the fallback.
+
 **Dashboard:** click the map and describe the emergency. You see the triage result, every candidate unit with its straight-line distance next to its road ETA, and the chosen route. Ambulances then drive their routes live on the map. The clock starts at the real local time and runs in real time by default; switch to 10× or 60× to watch a whole call play out. **📍 Use my location** reports the emergency at your own position (when you are inside the mapped area). The **Routing lab** tab runs one query through all four algorithms side by side. The **Results** tab shows every table above.
 
 **API**
