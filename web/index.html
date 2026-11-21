@@ -243,6 +243,12 @@ const layers = {demand:L.layerGroup().addTo(map), routes:L.layerGroup().addTo(ma
 let tab = 'live', picked = null, labPts = [], lastState = null;
 
 let MODE = 'server', EMERG = '108', ROUTING = 'contraction hierarchies';
+let fullReadyKey = null, PREBUILT = [];
+/** Quick mode → full engine: reload once the background build is cached and none of your calls is still running. */
+function maybeSwitchToFull() {
+  if (!fullReadyKey || myCalls.some(c => !c.doneAt)) return;
+  setTimeout(() => location.reload(), 800);
+}
 const urlPlace = new URLSearchParams(location.search).get('place');
 // Same dashboard, two back ends: the Java server if one is there, otherwise the in-browser engine (static hosting).
 async function call(method, path, body) {
@@ -256,6 +262,7 @@ async function boot() {
     MODE = 'browser'; $('modeTag').textContent = 'browser edition · no server';
     let cities = [];
     try { const r = await fetch('data/cities.json'); if (r.ok) cities = await r.json(); } catch (e) { }
+    PREBUILT = cities;
     const sel = $('citySel');
     sel.innerHTML = cities.map(c => `<option value="${c.slug}">${esc(c.name)}</option>`).join('') + '<option value="__world">🌍 Any city in the world…</option>';
     sel.hidden = false;
@@ -271,20 +278,16 @@ async function boot() {
       const key = `place:${plat.toFixed(4)},${plon.toFixed(4)},${radius}`;
       let d = await GHWorld.cacheGet(key);
       if (!d) {
-        $('track').hidden = true;
-        try {
-          const model = await (await fetch('data/world_model.json')).json();
-          const ov = buildOverlay(name);
-          d = await GHWorld.buildCity({lat: plat, lon: plon, radius, name, cc}, ov.progress, model);
-          ov.done();
-          GHWorld.cachePut(key, d);
-        } catch (err) {
-          buildOverlayError(name, err.message);
-          $('pickHint').innerHTML = `<b style="color:var(--p1)">Could not set up ${esc(name)}:</b> ${esc(err.message)}`;
-          return;
-        }
+        // Quick mode: usable at once (public routing + fast hospital search) while the full road network builds in the background
+        $('modeTag').textContent = 'quick mode · loading full road network…';
+        const quick = await GHWorld.startQuick({lat: plat, lon: plon, radius, name, cc});
+        GH.useExternal(quick.api);
+        fetch('data/world_model.json').then(r => r.json())
+          .then(model => GHWorld.buildCity({lat: plat, lon: plon, radius, name, cc}, msg => { $('modeTag').textContent = 'quick mode · ' + msg.replace('OpenStreetMap', 'OSM').toLowerCase(); }, model))
+          .then(full => { GHWorld.cachePut(key, full); fullReadyKey = key; $('modeTag').textContent = 'quick mode · full road network ready ✓ (switches when your calls finish)'; maybeSwitchToFull(); })
+          .catch(() => { $('modeTag').textContent = 'quick mode · public routing (map servers busy, will retry next visit)'; });
       }
-      await GH.init(null, key, d);
+      if (d) await GH.init(null, key, d);
     } else if (cities.length) {
       const city = cities.find(c => c.slug === CITY) || cities[0];
       sel.value = city.slug;
@@ -573,6 +576,7 @@ function updateLive(s) {
   if (changed) saveCalls();
   if (!myCalls.length) {                     // everything finished: back to a fresh form
     if (!box.hidden) { box.hidden = true; $('decision').hidden = true; selectedId = null; follow = false; }
+    maybeSwitchToFull();
     return;
   }
   if (!myCalls.some(c => c.id === selectedId)) selectedId = (myCalls.filter(c => !c.doneAt).pop() || myCalls[myCalls.length - 1]).id;
@@ -773,7 +777,8 @@ async function chooseSuggestion(x) {
   // in another city: switch to that city automatically, with the patient pinned and the address kept
   $('pickHint').innerHTML = `<b>${esc(x.main)}</b> is in ${esc(x.city)}. Setting up ${esc(x.city)}…`;
   stashPending({...addressDetails(), line: x.full});
-  setTimeout(() => goPlace(x.lat, x.lon, x.city, x.cc, true), 600);
+  const pre = PREBUILT.find(c => x.lat >= c.bounds[0][0] && x.lat <= c.bounds[1][0] && x.lon >= c.bounds[0][1] && x.lon <= c.bounds[1][1]);
+  setTimeout(() => pre ? (location.search = `?city=${pre.slug}&pick=${x.lat.toFixed(5)},${x.lon.toFixed(5)}`) : goPlace(x.lat, x.lon, x.city, x.cc, true), 600);
 }
 $('addr').addEventListener('input', () => {
   clearTimeout(suggTimer);
@@ -941,6 +946,71 @@ function crewMain(ambId) {
     if (view.alerting && 'Notification' in window && Notification.permission === 'granted' && !crewMain.notified) { crewMain.notified = true; new Notification('🚨 GoldenHour: new emergency job', {body: 'Open the crew app now'}); }
   };
 }
+
+['l-routes','l-bases'].forEach(id => $(id) && ($(id).onchange = () => {
+  const lyr = {['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
+  $(id).checked ? lyr.addTo(map) : map.removeLayer(lyr);
+}));
+
+// ---------------------------------------------------------------- routing lab
+$('labReset').onclick = () => { labPts = []; layers.lab.clearLayers(); $('labOut').innerHTML = ''; };
+async function runLab() {
+  const [a, b] = labPts, q = `from=${a.lat},${a.lng}&to=${b.lat},${b.lng}`;
+  const rows = [];
+  const algos = ROUTING === 'OSRM' ? ['osrm'] : ROUTING === 'A*' ? ['dijkstra', 'astar', 'bidi'] : ['dijkstra', 'astar', 'bidi', 'ch'];
+  for (const algo of algos) rows.push((await call('GET', `/api/v1/route?${q}&algo=${algo}`)).json);
+  const ch = rows[rows.length - 1];
+  if (ch.path.length) L.polyline(ch.path, {color:css('--accent'), weight:5}).addTo(layers.lab);
+  const base = rows[0].settledNodes;
+  $('labOut').innerHTML = `<p>Drive time <b>${fmt(ch.minutes)} min</b> — all ${rows.length} agree${rows.every(r => Math.abs(r.minutes - ch.minutes) < 1e-6) ? ' exactly ✓' : ' ✗'}</p>
+    <table><tr><th>Algorithm</th><th class="num">nodes settled</th><th class="num">vs Dijkstra</th><th class="num">time</th></tr>` +
+    rows.map(r => `<tr><td>${r.algorithm}</td><td class="num">${r.settledNodes.toLocaleString()}</td><td class="num">${fmt(base / Math.max(1, r.settledNodes), 0)}× less</td><td class="num">${fmt(r.queryMs, 2)} ms</td></tr>`).join('') + `</table>
+    <p class="hint">${ROUTING === 'OSRM' ? 'Quick mode: this city\'s road network is still loading, so this route comes from the public OSRM server. My own algorithms take over once it is ready.' : ROUTING === 'A*' ? 'This city was built live in your browser, so it routes with A*. The prebuilt cities also have contraction hierarchies, preprocessed offline by the Java core.' : 'Contraction hierarchies precompute "shortcut" edges once, then every query only climbs upward from both ends.'}</p>`;
+}
+
+// ---------------------------------------------------------------- results
+function mdTable(md) {
+  const lines = md.split('\n'), out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].startsWith('|')) {
+      const rows = [];
+      while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+      const cells = r => r.split('|').slice(1, -1).map(c => c.trim().replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'));
+      out.push(`<table><tr>${cells(rows[0]).map((c, j) => `<th class="${j ? 'num' : ''}">${c}</th>`).join('')}</tr>${rows.slice(2).map(r => `<tr>${cells(r).map((c, j) => `<td class="${j ? 'num' : ''}">${c}</td>`).join('')}</tr>`).join('')}</table>`);
+    } else {
+      const l = lines[i++].trim();
+      if (l.startsWith('# ')) continue;
+      if (l.startsWith('## ')) out.push(`<h2 style="margin-top:14px">${esc(l.slice(3))}</h2>`);
+      else if (l) out.push(`<p>${esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`);
+    }
+  }
+  return out.join('');
+}
+
+async function loadResults() {
+  const r = (await call('GET', '/api/v1/reports')).json;
+  const f = r.forecast;
+  let fc = '';
+  if (f) {
+    const names = Object.keys(f.metrics);
+    fc = `<p>${f.calls.toLocaleString()} real EMS calls, ${f.zones} zones (≈5 km cells), last 4 weeks held out (${esc(f.test_period[0].slice(0,10))} → ${esc(f.test_period[1].slice(0,10))}).</p>
+      <table><tr><th>Model</th><th class="num">Poisson deviance ↓</th><th class="num">WAPE per zone-shift ↓</th><th class="num">hotspot capture@5 ↑</th></tr>` +
+      names.map(n => { const m = f.metrics[n]; return `<tr><td>${esc(n)}</td><td class="num">${fmt(m.poisson_deviance,4)}</td><td class="num">${fmt(100*m.wape_zone_shift,1)}%</td><td class="num">${fmt(100*m['hotspot_capture@5'],1)}%</td></tr>`; }).join('') + `</table>
+      <p class="hint">Finding: a LightGBM model with lag/rolling features ties a simple separable model (zone rate × hour-of-week profile). Calls per zone-hour are close to pure Poisson noise, so the separable model is what feeds the planner — simpler, explainable, and it transfers to a new city.</p>`;
+    if (f.spatial_stability_by_shift) {
+      const s = f.spatial_stability_by_shift;
+      fc += `<h2 style="margin-top:14px">Does <i>where</i> emergencies happen change by shift?</h2><table><tr><th>Shift</th><th class="num">calls</th><th class="num">shift vs all-day TVD</th><th class="num">noise-only p99</th></tr>` +
+        Object.entries(s).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.calls.toLocaleString()}</td><td class="num">${fmt(100*v.tvd_observed,1)}%</td><td class="num">${fmt(100*v.tvd_noise_p99,1)}%</td></tr>`).join('') +
+        `</table><p class="hint">Only about 0.4–1.5% of call mass moves between shifts beyond sampling noise — which is why re-positioning every shift doesn't pay in the simulator.</p>`;
+    }
+  }
+  $('resultsGrid').innerHTML = `
+    <div class="card wide"><h2>Simulation: same fleet, smarter decisions</h2>${r.simulation ? mdTable(r.simulation) : '<p>Run <code>simulate</code> to generate.</p>'}</div>
+    <div class="card"><h2>Demand forecasting on real 911 calls</h2>${fc || '<p>Run the ML pipeline to generate.</p>'}</div>
+    <div class="card"><h2>Routing &amp; dispatch performance</h2>${r.benchmarks ? mdTable(r.benchmarks) : '<p>Run <code>bench</code> to generate.</p>'}</div>`;
+}
+
 
 // start: crew screen (?crew=<id>) or the dispatcher
 const CREW = new URLSearchParams(location.search).get('crew');

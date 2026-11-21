@@ -476,7 +476,10 @@
     return h.map(v => [g.lat[v], g.lon[v]]);
   }
   function reset() { try { localStorage.removeItem(saveKey); } catch (e) { } world = null; }
+  let external = null;                       // quick mode: another back end (public routing) answers until the road network is ready
+  function useExternal(fn) { external = fn; }
   async function api(method, path, body) {
+    if (external) return external(method, path, body);
     const w = world, g = w.g, url = new URL(path, location.href), p = url.pathname.replace(/^.*\/api\/v1\//, '');
     if (p === 'info') {
       let a0 = 90, a1 = -90, o0 = 180, o1 = -180;
@@ -522,5 +525,5 @@
     return [404, { error: 'not found' }];
   }
 
-  window.GH = { init, api, reset, triage, Heap, Graph, Dijkstra, AStar, Bidirectional, CH };
+  window.GH = { init, api, reset, useExternal, triage, Heap, Graph, Dijkstra, AStar, Bidirectional, CH };
 })();

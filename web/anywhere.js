@@ -212,3 +212,177 @@
 
   window.GHWorld = { buildCity, cacheGet, cachePut, EMERGENCY };
 })();
+
+// ======================================================================================================
+// Quick mode: the city is usable immediately, before its road network has downloaded.
+// Hospitals come from a fast OpenStreetMap place search; drive times and routes from the public OSRM server
+// (router.project-osrm.org, OpenStreetMap data). It answers the same API as the in-browser engine, so the
+// dashboard does not change. Once the full network is built in the background, the page switches to it.
+// ======================================================================================================
+(function () {
+  const OSRM = 'https://router.project-osrm.org';
+  const CONGESTION = 1 / 0.7;                   // OSRM gives free-flow times; urban traffic is slower (assumption, as for the engine)
+  const R = 6371000, rad = Math.PI / 180;
+  const hav = (a1, o1, a2, o2) => { const x = Math.sin((a2 - a1) * rad / 2) ** 2 + Math.cos(a1 * rad) * Math.cos(a2 * rad) * Math.sin((o2 - o1) * rad / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+  const SEV = { P1_CRITICAL: 0, P2_EMERGENT: 1, P3_URGENT: 2, P4_ROUTINE: 3 };
+  const clock = s => { const d = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], p = x => String(x).padStart(2, '0'); s = Math.floor(s); return `${d[Math.floor(s / 86400) % 7]} ${p(Math.floor(s / 3600) % 24)}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`; };
+
+  async function osrmRoute(a, b) {
+    const r = await (await fetch(`${OSRM}/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`)).json();
+    if (!r.routes || !r.routes.length) throw new Error('no route');
+    const c = r.routes[0].geometry.coordinates.map(([o, l]) => [l, o]);
+    return { path: c, seconds: r.routes[0].duration * CONGESTION };
+  }
+  async function osrmTable(sources, dest) {        // seconds from each source to dest, one request
+    const pts = [dest, ...sources].map(p => `${p[1]},${p[0]}`).join(';');
+    const r = await (await fetch(`${OSRM}/table/v1/driving/${pts}?sources=${sources.map((_, i) => i + 1).join(';')}&destinations=0`)).json();
+    return (r.durations || []).map(row => row[0] == null ? Infinity : row[0] * CONGESTION);
+  }
+
+  async function quickHospitals(lat, lon, radius) {
+    const d = radius / 111000, box = `${lon - d * 1.3},${lat + d},${lon + d * 1.3},${lat - d}`;
+    try {
+      const r = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=hospital&limit=40&bounded=1&extratags=1&viewbox=${box}`, { headers: { 'Accept-Language': 'en' } })).json();
+      const out = [];
+      for (const x of r) {
+        const name = (x.name || x.display_name.split(',')[0]).trim();
+        if (!name || /eye|dental|skin|ivf|vet|clinic|diagnostic|lab/i.test(name) || out.some(h => h.name === name)) continue;
+        if (out.some(h => hav(h.lat, h.lon, +x.lat, +x.lon) < 600)) continue;
+        const t = x.extratags || {};
+        out.push({ id: out.length, name: name.slice(0, 60), lat: +x.lat, lon: +x.lon, specialties: ['CARDIAC', 'STROKE', 'TRAUMA', 'GENERAL', 'MATERNITY'], phone: (t.phone || t['contact:phone'] || '').split(';')[0] });
+        if (out.length >= 12) break;
+      }
+      return out;
+    } catch (e) { return []; }
+  }
+
+  async function startQuick({ lat, lon, radius, name, cc }) {
+    const hospitals = await quickHospitals(lat, lon, radius);
+    const tz = ({ in: 5.5, lk: 5.5, np: 5.75 })[cc] ?? Math.round(lon / 15);
+    const u = new Date(Date.now() + tz * 3600e3);
+    const W = {
+      city: name, emergency: GHWorld.EMERGENCY[cc] || '112', speed: 1, simStart: (((u.getUTCDay() + 6) % 7) * 24 + u.getUTCHours()) * 3600 + u.getUTCMinutes() * 60 + u.getUTCSeconds(),
+      wallStart: Date.now(), seq: 0, incidents: [], queue: [], events: [], resp: [], p1: [0, 0], lat: [],
+      now() { return this.simStart + (Date.now() - this.wallStart) / 1000 * this.speed; },
+      log(t) { this.events.unshift({ text: clock(this.now()) + '  ' + t }); if (this.events.length > 60) this.events.pop(); }
+    };
+    // 8 ambulances: at up to 4 hospitals, the rest spread on a ring around the centre
+    W.amb = [];
+    for (let i = 0; i < 8; i++) {
+      const h = hospitals[i];
+      const p = h && i < 4 ? [h.lat, h.lon] : [lat + Math.cos(i * 0.785) * radius * 0.5 / 111000, lon + Math.sin(i * 0.785) * radius * 0.5 / (111000 * Math.cos(lat * rad))];
+      W.amb.push({ id: i, unit: i % 3 === 2 ? 'BLS' : 'ALS', pos: p, base: p, free: true, job: null });
+    }
+    const posAt = (j, t) => {
+      if (!j.path || j.path.length < 2) return j.at || j.path[0];
+      const f = Math.min(1, Math.max(0, (t - (j.end - j.dur)) / Math.max(1, j.dur)));
+      const target = f * j.len; let acc = 0;
+      for (let i = 1; i < j.path.length; i++) {
+        const seg = hav(j.path[i - 1][0], j.path[i - 1][1], j.path[i][0], j.path[i][1]);
+        if (acc + seg >= target) { const g = seg ? (target - acc) / seg : 0; return [j.path[i - 1][0] + g * (j.path[i][0] - j.path[i - 1][0]), j.path[i - 1][1] + g * (j.path[i][1] - j.path[i - 1][1])]; }
+        acc += seg;
+      }
+      return j.path[j.path.length - 1];
+    };
+    const setPath = (j, path, dur, t) => { j.path = path; j.dur = dur; j.end = t + dur; j.len = path.reduce((s, p, i) => i ? s + hav(path[i - 1][0], path[i - 1][1], p[0], p[1]) : 0, 0); };
+    const chooseHospital = inc => {
+      let best = null, bd = Infinity;
+      for (const h of hospitals) { const d = hav(inc.lat, inc.lon, h.lat, h.lon); if (d < bd) { bd = d; best = h; } }
+      return best;
+    };
+    async function dispatch(inc) {
+      const free = W.amb.filter(a => a.free).map(a => ({ a, d: hav(a.pos[0], a.pos[1], inc.lat, inc.lon) })).sort((x, y) => x.d - y.d).slice(0, 8);
+      if (!free.length) return null;
+      let etas; try { etas = await osrmTable(free.map(x => x.a.pos), [inc.lat, inc.lon]); } catch (e) { etas = free.map(x => x.d / 8.3); }   // ~30 km/h if the server is busy
+      let best = -1, bs = Infinity;
+      free.forEach((x, i) => { const sc = etas[i] + (inc.severity === 'P1_CRITICAL' && x.a.unit === 'BLS' ? 180 : 0); if (sc < bs) { bs = sc; best = i; } });
+      const a = free[best].a, audit = free.map((x, i) => ({ ambulance: x.a.id, straightLineKm: x.d / 1000, roadEtaMin: etas[i] / 60 }));
+      let r; try { r = await osrmRoute(a.pos, [inc.lat, inc.lon]); } catch (e) { r = { path: [a.pos, [inc.lat, inc.lon]], seconds: etas[best] }; }
+      const h = chooseHospital(inc);
+      inc.ambulance = a.id; inc.hospital = h; a.free = false;
+      a.job = { phase: 'EN_ROUTE', inc }; setPath(a.job, r.path, 60 + r.seconds, W.now());
+      return { a, r, h, audit };
+    }
+    async function advance(a, t) {
+      const j = a.job, inc = j.inc;
+      if (j.phase === 'EN_ROUTE') {
+        const m = (t - inc.created) / 60; inc.responseMin = m; W.resp.push(m);
+        if (inc.severity === 'P1_CRITICAL') { W.p1[1]++; if (m <= 8) W.p1[0]++; }
+        W.log(`AMB-${a.id} on scene at ${inc.id} after ${m.toFixed(1)} min`);
+        a.job = { phase: 'ON_SCENE', inc, at: [inc.lat, inc.lon], path: [[inc.lat, inc.lon]] }; a.job.end = t + 12 * 60 + Math.random() * 480; a.job.dur = 0;
+      } else if (j.phase === 'ON_SCENE') {
+        if (inc.hospital) {
+          let r; try { r = await osrmRoute([inc.lat, inc.lon], [inc.hospital.lat, inc.hospital.lon]); } catch (e) { r = { path: [[inc.lat, inc.lon], [inc.hospital.lat, inc.hospital.lon]], seconds: 900 }; }
+          a.job = { phase: 'TRANSPORTING', inc }; setPath(a.job, r.path, r.seconds, t);
+        } else free(a, [inc.lat, inc.lon], t);
+      } else if (j.phase === 'TRANSPORTING') {
+        W.log(`AMB-${a.id} delivered ${inc.id} to ${inc.hospital.name}`);
+        a.job = { phase: 'HANDOVER', inc, at: [inc.hospital.lat, inc.hospital.lon], path: [[inc.hospital.lat, inc.hospital.lon]] }; a.job.end = t + 900; a.job.dur = 0;
+      } else if (j.phase === 'HANDOVER') free(a, a.job.at, t);
+      else if (j.phase === 'RETURNING') { a.pos = a.base; a.job = null; }
+    }
+    async function free(a, at, t) {
+      a.pos = at; a.free = true; a.job = null;
+      if (W.queue.length) { W.queue.sort((x, y) => SEV[x.severity] - SEV[y.severity] || x.created - y.created); const inc = W.queue.shift(); await dispatch(inc); return; }
+      let r; try { r = await osrmRoute(at, a.base); } catch (e) { r = { path: [at, a.base], seconds: 600 }; }
+      a.job = { phase: 'RETURNING', inc: null }; setPath(a.job, r.path, r.seconds, t);
+    }
+    let busy = false;
+    setInterval(async () => {
+      if (busy) return; busy = true;
+      try { const t = W.now(); for (const a of W.amb) { let k = 0; while (a.job && t >= a.job.end && k++ < 5) await advance(a, a.job.end); } } finally { busy = false; }
+    }, 300);
+    const incJson = i => ({ id: i.id, lat: i.lat, lon: i.lon, severity: i.severity, need: i.need, category: i.category, notes: i.notes, time: clock(i.created) });
+    const ring = []; for (let k = 0; k < 48; k++) ring.push([lat + Math.cos(k * Math.PI / 24) * radius / 111000, lon + Math.sin(k * Math.PI / 24) * radius / (111000 * Math.cos(lat * rad))]);
+
+    async function api(method, path, body) {
+      const url = new URL(path, location.href), p = url.pathname.replace(/^.*\/api\/v1\//, '');
+      if (p === 'info') return [200, { city: W.city, emergency: W.emergency, country: cc, routing: 'OSRM', quick: true, hull: ring, nodes: 0,
+        bounds: [[lat - radius / 111000, lon - radius / 111000], [lat + radius / 111000, lon + radius / 111000]] }];
+      if (p === 'snap') { const a = +url.searchParams.get('lat'), o = +url.searchParams.get('lon'), d = hav(a, o, lat, lon) - radius; return [200, { lat: a, lon: o, distanceM: Math.max(0, d), inside: d <= 0 }]; }
+      if (p === 'incidents' && method === 'POST') {
+        if (hav(body.lat, body.lon, lat, lon) > radius) return [422, { error: 'outside the area being set up' }];
+        const tr = GH.triage(body.notes || ''), t1 = performance.now();
+        const inc = { id: 'INC-' + (++W.seq), lat: body.lat, lon: body.lon, severity: tr.severity, need: tr.need, category: tr.category, notes: String(body.notes || '').slice(0, 1000), created: W.now() };
+        W.incidents.push(inc);
+        const res = await dispatch(inc);
+        const ms = performance.now() - t1; W.lat.push(ms);
+        if (!res) { W.queue.push(inc); W.log(`${inc.id} queued`); return [202, { incident: incJson(inc), triage: { ...tr, ms: 0 }, assignment: null, candidates: [], dispatchMs: ms, source: 'browser' }]; }
+        W.log(`${inc.id} ${inc.severity} ${inc.category} → AMB-${res.a.id} ETA ${(res.r.seconds / 60).toFixed(1)} min`);
+        return [201, { incident: incJson(inc), triage: { ...tr, ms: 0 }, candidates: res.audit, dispatchMs: ms, source: 'browser',
+          assignment: { ambulance: res.a.id, unit: res.a.unit, etaMin: res.r.seconds / 60, hospital: res.h ? res.h.name : 'nearest hospital', hospitalPhone: res.h ? res.h.phone : '',
+            transportMin: res.h ? hav(inc.lat, inc.lon, res.h.lat, res.h.lon) / 6.9 / 60 : null, reason: 'quick mode (public routing)', path: res.r.path } }];
+      }
+      if (p === 'sim' && method === 'POST') { if ([1, 10, 60].includes(body.speed)) { W.simStart = W.now(); W.wallStart = Date.now(); W.speed = body.speed; } return [200, { speed: W.speed, autoCalls: false }]; }
+      if (p === 'state') {
+        const t = W.now(), resp = [...W.resp].sort((x, y) => x - y);
+        const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
+        const st = {
+          simTime: t, clock: clock(t), speed: W.speed, autoCalls: false, events: W.events,
+          ambulances: W.amb.map(a => { const j = a.job, pos = j ? posAt(j, t) : a.pos;
+            const m = { id: a.id, unit: a.unit, lat: pos[0], lon: pos[1], phase: j ? j.phase : 'AVAILABLE', incident: j && j.inc ? j.inc.id : null, base: a.base, secondsLeft: j ? Math.max(0, j.end - t) : 0 };
+            if (j && ['EN_ROUTE', 'TRANSPORTING', 'RETURNING'].includes(j.phase) && j.path.length > 1) { const f = Math.min(1, Math.max(0, (t - (j.end - j.dur)) / Math.max(1, j.dur))); m.path = [pos, ...j.path.slice(Math.floor(f * (j.path.length - 1)) + 1)]; }
+            return m; }),
+          incidents: W.incidents.slice(-40).map(i => ({ ...incJson(i), ambulance: i.ambulance ?? null, responseMin: i.responseMin ?? null })),
+          hospitals: hospitals.map(h => ({ id: h.id, name: h.name, lat: h.lat, lon: h.lon, specialties: h.specialties, phone: h.phone })),
+          stats: { calls: W.seq, waiting: W.queue.length, busy: W.amb.filter(a => a.job && a.job.phase !== 'RETURNING').length,
+            p1Within8: W.p1[1] ? W.p1[0] / W.p1[1] : null, medianResponseMin: resp.length ? resp[resp.length >> 1] : null, dispatchP99Ms: null } };
+        st.mine = ids.map(id => W.incidents.find(i => i.id === id)).filter(Boolean).map(i => ({ ...incJson(i), ambulance: i.ambulance ?? null, responseMin: i.responseMin ?? null, hospital: i.hospital ? i.hospital.name : null }));
+        return [200, st];
+      }
+      if (p === 'route') {
+        const [fa, fo] = url.searchParams.get('from').split(',').map(Number), [ta, to] = url.searchParams.get('to').split(',').map(Number), t0 = performance.now();
+        try { const r = await osrmRoute([fa, fo], [ta, to]); return [200, { algorithm: 'OSRM (public server)', found: true, minutes: r.seconds / 60, settledNodes: 0, queryMs: performance.now() - t0, path: r.path }]; }
+        catch (e) { return [200, { algorithm: 'OSRM (public server)', found: false, minutes: NaN, settledNodes: 0, queryMs: 0, path: [] }]; }
+      }
+      if (p === 'demand') return [200, { zones: [] }];
+      if (p === 'reports') {
+        const get = async (f, json) => { try { const r = await fetch('data/' + f); return r.ok ? (json ? r.json() : r.text()) : null; } catch { return null; } };
+        return [200, { simulation: await get('simulation.md'), benchmarks: await get('benchmarks.md'), forecast: await get('forecast_metrics.json', true) }];
+      }
+      return [404, { error: 'not found' }];
+    }
+    return { api, hospitals };
+  }
+  window.GHWorld.startQuick = startQuick;
+})();

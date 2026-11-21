@@ -25,6 +25,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from download_cities import CITIES  # noqa: E402
 
+# national ambulance numbers (same table as web/anywhere.js)
+EMERGENCY = {"in": "108", "us": "911", "ca": "911", "mx": "911", "ph": "911", "gb": "999", "au": "000", "nz": "111", "jp": "119", "kr": "119",
+             "cn": "120", "hk": "999", "sg": "995", "my": "999", "bd": "999", "pk": "1122", "lk": "1990", "np": "102", "ae": "998", "sa": "997",
+             "eg": "123", "za": "10177", "ng": "112", "ke": "999", "br": "192", "ru": "103", "tr": "112", "th": "1669", "id": "118"}
 # people per km² in the dense central area each extract covers (rough census-based estimates; stated as assumptions)
 DENSITY = {"chennai": 17000, "bengaluru": 13000, "mumbai": 25000, "delhi": 13000, "hyderabad": 12000, "kolkata": 22000, "pune": 11000}
 AMBULANCES_PER_100K = 1.0          # fleet sizing for the demo (EMS norm discussions in India range ~1 per 50k–100k)
@@ -112,22 +116,25 @@ def pick_hospitals(city):
 
 def build(slug):
     city = ROOT / "data" / slug
-    name, lat, lon, dist = CITIES[slug]
+    c = CITIES[slug]
+    name, lat, lon, dist = c.name, c.lat, c.lon, c.dist
     if not (city / "hospitals.csv").exists():
         print(f"  picked {pick_hospitals(city)} hospitals from OpenStreetMap")
     area_km2 = (2 * dist / 1000) ** 2
-    population = int(area_km2 * DENSITY.get(slug, 12000))
+    population = int(area_km2 * c.density)
     ambulances = max(8, round(population / 100_000 * AMBULANCES_PER_100K))
     subprocess.run([sys.executable, "transfer.py", "--city", str(city), "--population", str(population)], cwd=ROOT / "ml/forecast", check=True)
     out = ROOT / "web/data" / slug / "city.json"
     subprocess.run(["java", "-jar", str(ROOT / "core/out/goldenhour.jar"), "export-static", str(city), str(out), str(ambulances), "0.35"], cwd=ROOT, check=True)
-    raw = out.read_bytes()
+    bundle = json.loads(out.read_text())
+    bundle["country"], bundle["emergency"] = c.cc, EMERGENCY.get(c.cc, "112")
+    raw = json.dumps(bundle, separators=(",", ":")).encode()
     gz = gzip.compress(raw, 9)
     (out.parent / "city.json.gz").write_bytes(gz)
     out.unlink()                                           # ship only the compressed bundle
     nodes = load_nodes(city)
     lats, lons = [a for a, _ in nodes], [o for _, o in nodes]
-    return {"slug": slug, "name": name, "center": [lat, lon], "bounds": [[min(lats), min(lons)], [max(lats), max(lons)]],
+    return {"slug": slug, "name": name, "cc": c.cc, "center": [lat, lon], "bounds": [[min(lats), min(lons)], [max(lats), max(lons)]],
             "population": population, "ambulances": ambulances, "mb": round(len(gz) / 1e6, 1)}
 
 
