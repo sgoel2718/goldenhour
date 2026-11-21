@@ -88,6 +88,8 @@ tr.win td{color:var(--avail);font-weight:600}
 .track .big b{font:700 34px/1 "JetBrains Mono",monospace;color:var(--accent)}
 .track .title{font-weight:700;font-size:15px}
 .track .meta{color:var(--ink2);font-size:13px}
+.callcard{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;cursor:pointer;background:var(--panel)}
+.callcard.sel{border:2px solid var(--accent);cursor:default}
 .pulse{animation:pulse 1.2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,176,32,.9)}70%{box-shadow:0 0 0 14px rgba(255,176,32,0)}100%{box-shadow:0 0 0 0 rgba(255,176,32,0)}}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
@@ -247,8 +249,13 @@ $('send').onclick = async () => {
     const d = r.json;
     if (r.status === 429) { showDecision(`<div class="hint">Rate limited — try again in a second.</div>`); return; }
     if (!r.ok) { showDecision(`<div class="hint">${esc(d.error || 'error')}</div>`); return; }
-    renderDecision(d);
-    if (d.assignment) { follow = true; $('track').hidden = false; document.querySelector('aside').scrollTo({top:0, behavior:'smooth'}); poll(); }
+    const html = renderDecision(d);
+    const a = d.assignment;
+    myCalls.push({id: d.incident.id, severity: d.triage.severity, category: d.triage.category, notes: d.incident.notes,
+      lat: d.incident.lat, lon: d.incident.lon, amb: a ? a.ambulance : null, hospital: a ? a.hospital : null,
+      hospitalPhone: a ? a.hospitalPhone : '', sentAt: Date.now(), doneAt: null, html});
+    selectedId = d.incident.id; follow = true; saveCalls();
+    $('track').hidden = false; document.querySelector('aside').scrollTo({top:0, behavior:'smooth'}); poll();
   } finally { btn.disabled = false; }
 };
 
@@ -260,7 +267,6 @@ function renderDecision(d) {
   const nearestSL = d.candidates.length ? d.candidates.reduce((m, c) => c.straightLineKm < m.straightLineKm ? c : m) : null;
   let html = `<div class="row" style="flex-wrap:wrap"><span class="sev ${t.severity}">${t.severity.replace('_',' ')}</span> <b>${esc(t.category)}</b>
     <span class="hint">needs ${esc(t.need)} · triage by ${esc(t.source)} in ${fmt(t.ms,1)} ms</span></div>`;
-  tracked = {id: d.incident.id, amb: a ? a.ambulance : null, hospital: a ? a.hospital : null, done: false};
   if (a) {
     const slow = d.candidates.filter(c => c.ambulance !== best && c.straightLineKm < d.candidates.find(x => x.ambulance === best).straightLineKm);
     html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. The patient goes to <b>${esc(a.hospital)}</b> because it is the nearest hospital that treats <b>${esc(t.need.toLowerCase())}</b> cases.</p>`;
@@ -278,7 +284,9 @@ function renderDecision(d) {
     if (nearestSL && best != null && nearestSL.ambulance !== best)
       html += `<p class="hint">The straight-line nearest unit (AMB-${nearestSL.ambulance}) would have taken ${fmt(nearestSL.roadEtaMin)} min — one-way streets, rivers and road layout make "closest" misleading.</p>`;
   }
+  html = `<div class="hint" style="margin-bottom:6px">Call <b>${esc(d.incident.id)}</b> · ${esc(d.incident.time || '')}</div>` + html;
   showDecision(html);
+  return html;
 }
 
 $('speed').onclick = async e => { const v = +e.target.dataset.s; if (v) { await call('POST', '/api/v1/sim', {speed: v}); poll(); } };
@@ -334,7 +342,6 @@ $('auto').onclick = async () => {
 };
 
 // ---------------------------------------------------------------- live tracking of the call you reported
-let tracked = null;
 const STEPS = ['Dispatched', 'Driving to patient', 'Treating on scene', 'To hospital', 'Handover'];
 let follow = false, placeCache = {t: 0, key: '', name: ''};
 map.on('dragstart', () => { follow = false; });
@@ -356,67 +363,115 @@ async function placeName(lat, lon, force) {
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
 const pathKm = path => { let m = 0; for (let i = 1; i < (path || []).length; i++) m += L.latLng(path[i - 1]).distanceTo(L.latLng(path[i])); return m / 1000; };
 
-function updateLive(s) {
-  const box = $('track');
-  if (!tracked || !box) return;
-  const inc = s.incidents.find(i => i.id === tracked.id);
-  const amb = s.ambulances.find(a => a.incident === tracked.id && a.phase !== 'RETURNING');
-  const realSec = x => x.secondsLeft / s.speed;                    // wall-clock seconds at the current clock speed
-  let step = 0, title, big = '', meta = '';
+// Every call you send is kept (in this browser) until it is finished, so a refresh or a second call never loses one.
+const CALLS_KEY = 'goldenhour-mycalls-v1';
+let myCalls = [], selectedId = null;
+try { myCalls = JSON.parse(localStorage.getItem(CALLS_KEY) || '[]'); } catch (e) { myCalls = []; }
+const saveCalls = () => { try { localStorage.setItem(CALLS_KEY, JSON.stringify(myCalls)); } catch (e) { } };
+if (myCalls.length) { const last = myCalls.filter(c => !c.doneAt).pop() || myCalls[myCalls.length - 1]; selectedId = last.id; follow = true; }
+const isTracked = a => myCalls.some(c => c.id === a.incident && !c.doneAt) && a.phase !== 'RETURNING';
+
+/** Status of one of your calls from the live state. */
+function callStatus(c, s) {
+  const inc = (s.mine || []).find(i => i.id === c.id) || s.incidents.find(i => i.id === c.id);
+  const amb = s.ambulances.find(a => a.incident === c.id && a.phase !== 'RETURNING');
+  const realSec = x => x.secondsLeft / s.speed;
+  const hosp = esc((inc && inc.hospital) || c.hospital || 'hospital');
+  let step = 0, title, big = '', meta = '', done = false;
   if (amb) {
     step = {EN_ROUTE: 1, ON_SCENE: 2, TRANSPORTING: 3, HANDOVER: 4}[amb.phase] || 0;
     if (amb.phase === 'EN_ROUTE') {
-      const km = pathKm(amb.path);
-      title = `🚑 Ambulance AMB-${amb.id} is on the way`;
-      big = `<b>${mmss(realSec(amb))}</b><span class="meta">to reach you · ${fmt(km, 1)} km by road</span>`;
-      placeName(amb.lat, amb.lon).then(n => { const el = $('ambWhere'); if (el && n) el.textContent = `Now near ${n}`; });
-      meta = `<div class="meta" id="ambWhere">Now at ${amb.lat.toFixed(4)}, ${amb.lon.toFixed(4)}</div>`;
+      title = `🚑 AMB-${amb.id} is on the way`;
+      big = `<b>${mmss(realSec(amb))}</b><span class="meta">to reach the patient · ${fmt(pathKm(amb.path), 1)} km by road</span>`;
+      if (c.id === selectedId) {
+        placeName(amb.lat, amb.lon).then(n => { const el = $('ambWhere'); if (el && n) el.textContent = `Now near ${n}`; });
+        meta = `<div class="meta" id="ambWhere">${placeCache.name ? `Now near ${esc(placeCache.name)}` : `Now at ${amb.lat.toFixed(4)}, ${amb.lon.toFixed(4)}`}</div>`;
+      }
     } else if (amb.phase === 'ON_SCENE') {
-      title = '🩺 The ambulance has arrived. Paramedics are with the patient';
+      title = `🩺 AMB-${amb.id} has arrived. Paramedics are with the patient`;
       big = `<b>${mmss(realSec(amb))}</b><span class="meta">until leaving for hospital</span>`;
     } else if (amb.phase === 'TRANSPORTING') {
-      title = `🏥 On the way to ${esc(tracked.hospital)}`;
+      title = `🏥 AMB-${amb.id} is taking the patient to ${hosp}`;
       big = `<b>${mmss(realSec(amb))}</b><span class="meta">to hospital · ${fmt(pathKm(amb.path), 1)} km</span>`;
     } else {
-      title = `Handing over to the ${esc(tracked.hospital)} team`;
+      title = `AMB-${amb.id} is handing over to the ${hosp} team`;
       big = `<b>${mmss(realSec(amb))}</b><span class="meta">remaining</span>`;
     }
-  } else if (inc && inc.ambulance == null) { title = `⏳ All ambulances are busy. Your call is queued by priority (${s.stats.waiting} waiting)`; }
-  else if (inc && inc.responseMin != null) { step = 5; title = `✅ Done. The ambulance reached the patient in ${fmt(inc.responseMin)} min`; }
-  else { step = 5; title = '✅ Done.'; }
-  if (follow && amb && tab === 'live') {
-    const target = amb.phase === 'TRANSPORTING' && amb.path ? amb.path[amb.path.length - 1] : inc ? [inc.lat, inc.lon] : null;
-    if (target) map.fitBounds(L.latLngBounds([[amb.lat, amb.lon], target]).pad(0.35), {maxZoom: 16, animate: true});
-  }
-  box.innerHTML = `<div class="title">${title}</div>${big ? `<div class="big">${big}</div>` : ''}${meta}
-    <div class="steps">${STEPS.map((_, i) => `<span class="${i < step || step === 5 ? 'on' : i === step ? 'cur' : ''}"></span>`).join('')}</div>
-    <div class="labels">${STEPS.map((x, i) => `<span class="${i === step && step < 5 ? 'cur' : ''}">${x}</span>`).join('')}</div>
-    <div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:108">Call 108</a>${amb && !follow ? '<button class="ghost" id="followBtn">Follow ambulance</button>' : ''}<span class="hint">${s.speed === 1 ? `Real time · ${esc(s.clock)}` : `Clock running ${s.speed}× · ${esc(s.clock)}`}</span></div>`;
-  const fb = $('followBtn'); if (fb) fb.onclick = () => { follow = true; poll(); };
+  } else if (inc && inc.ambulance == null) { title = `⏳ All ambulances are busy. Queued by priority (${s.stats.waiting} waiting)`; }
+  else if (inc && inc.responseMin != null) { step = 5; done = true; title = `✅ Done. The ambulance reached the patient in ${fmt(inc.responseMin)} min`; }
+  else if (!inc) { step = 5; done = true; title = '✅ Finished'; }
+  else { title = 'Dispatching…'; }
+  return {inc, amb, step, title, big, meta, done};
 }
+
+function updateLive(s) {
+  const box = $('track');
+  if (!box) return;
+  // finished calls stay visible for 20 s with a ✅, then are cleared automatically
+  let changed = false;
+  for (const c of myCalls) {
+    const st = callStatus(c, s);
+    if (st.done && !c.doneAt) { c.doneAt = Date.now(); changed = true; }
+  }
+  const before = myCalls.length;
+  myCalls = myCalls.filter(c => !c.doneAt || Date.now() - c.doneAt < 20000);
+  if (myCalls.length !== before) changed = true;
+  if (changed) saveCalls();
+  if (!myCalls.length) {                     // everything finished: back to a fresh form
+    if (!box.hidden) { box.hidden = true; $('decision').hidden = true; selectedId = null; follow = false; }
+    return;
+  }
+  if (!myCalls.some(c => c.id === selectedId)) selectedId = (myCalls.filter(c => !c.doneAt).pop() || myCalls[myCalls.length - 1]).id;
+  box.hidden = false;
+  const sel = myCalls.find(c => c.id === selectedId);
+  if (sel && sel.html && $('decision').dataset.id !== sel.id) { showDecision(sel.html); $('decision').dataset.id = sel.id; }
+  const active = myCalls.filter(c => !c.doneAt).length;
+  let html = `<div class="row" style="justify-content:space-between;margin-bottom:6px"><b>Your calls (${active} active)</b>
+    <button class="ghost" id="resetBtn" style="padding:4px 10px;font-size:12px">${resetArmed ? 'Click again to clear everything' : 'Reset'}</button></div>`;
+  for (const c of [...myCalls].reverse()) {
+    const st = callStatus(c, s), isSel = c.id === selectedId;
+    if (isSel && follow && st.amb && tab === 'live') {
+      const target = st.amb.phase === 'TRANSPORTING' && st.amb.path ? st.amb.path[st.amb.path.length - 1] : [c.lat, c.lon];
+      map.fitBounds(L.latLngBounds([[st.amb.lat, st.amb.lon], target]).pad(0.35), {maxZoom: 16, animate: true});
+    }
+    html += `<div class="callcard ${isSel ? 'sel' : ''}" data-id="${esc(c.id)}">
+      <div class="hint"><span class="sev ${c.severity}">${c.severity.replace('_', ' ')}</span> ${esc(c.id)} · ${esc(c.category)}</div>
+      <div class="title">${st.title}</div>${isSel && st.big ? `<div class="big">${st.big}</div>` : !isSel && st.big ? `<div class="meta">${st.big.replace(/<[^>]+>/g, ' ')}</div>` : ''}${isSel ? st.meta : ''}
+      ${isSel ? `<div class="steps">${STEPS.map((_, i) => `<span class="${i < st.step || st.step === 5 ? 'on' : i === st.step ? 'cur' : ''}"></span>`).join('')}</div>
+      <div class="labels">${STEPS.map((x, i) => `<span class="${i === st.step && st.step < 5 ? 'cur' : ''}">${x}</span>`).join('')}</div>` : ''}
+      ${isSel ? `<div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:108">Call 108</a>${st.amb && !follow ? '<button class="ghost followBtn">Follow ambulance</button>' : ''}</div>` : '<div class="hint">Tap to track this call</div>'}
+    </div>`;
+  }
+  html += `<div class="hint" style="margin-top:6px">${s.speed === 1 ? `Real time · ${esc(s.clock)}` : `Clock running ${s.speed}× · ${esc(s.clock)}`} · kept on this device until finished</div>`;
+  box.innerHTML = html;
+  box.querySelectorAll('.callcard').forEach(el => el.onclick = e => {
+    if (e.target.closest('a')) return;
+    if (e.target.classList.contains('followBtn')) { follow = true; poll(); return; }
+    if (selectedId !== el.dataset.id) { selectedId = el.dataset.id; follow = true; placeCache = {t: 0, key: '', name: ''}; poll(); }
+  });
+  $('resetBtn').onclick = () => {
+    if (!resetArmed) { resetArmed = true; setTimeout(() => { resetArmed = false; }, 4000); poll(); return; }
+    myCalls = []; saveCalls();
+    try { localStorage.removeItem(CALLS_KEY); } catch (e) { }
+    if (MODE === 'browser') GH.reset();
+    location.reload();
+  };
+}
+let resetArmed = false;
 
 // ---------------------------------------------------------------- live state
-let demandLoaded = false;
-async function loadDemand() {
-  const d = (await call('GET', '/api/v1/demand')).json;
-  layers.demand.clearLayers();
-  const max = Math.max(...d.zones.map(z => z.perWeek));
-  d.zones.forEach(z => L.circleMarker([z.lat, z.lon], {radius: 3 + 9 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.15 + .35 * z.perWeek / max, bubblingMouseEvents:true})
-    .bindTooltip(`zone ${z.id}: ${fmt(z.perWeek,1)} calls/week forecast, ${fmt(z.nowPerHour,3)}/h now`).addTo(layers.demand));
-  demandLoaded = true;
-}
-
 const ambMarkers = {};
 function ambIcon(a) {
   const c = css(PHASE[a.phase] || '--avail');
-  if (tracked && a.incident === tracked.id && a.phase !== 'RETURNING')
+  if (isTracked(a))
     return L.divIcon({className:'', html:`<div class="amb-icon pulse" style="background:${c};width:64px;font-size:12px;line-height:22px;border-color:#fff">🚑 ${a.unit}${a.id}</div>`, iconSize:[64,22], iconAnchor:[32,11]});
   return L.divIcon({className:'', html:`<div class="amb-icon" style="background:${c};width:40px">${a.unit}${a.id}</div>`, iconSize:[40,16], iconAnchor:[20,8]});
 }
 
 async function poll() {
   try {
-    const s = (await call('GET', '/api/v1/state')).json;
+    const ids = myCalls.map(c => c.id).join(',');
+    const s = (await call('GET', '/api/v1/state' + (ids ? `?ids=${encodeURIComponent(ids)}` : ''))).json;
     lastState = s;
     $('k-clock').textContent = s.clock;
     $('k-clock-l').textContent = s.speed === 1 ? 'local time' : `clock · ${s.speed}×`;
@@ -438,7 +493,7 @@ async function poll() {
     s.ambulances.forEach(a => {
       seen.add(a.id);
       if (!ambMarkers[a.id]) ambMarkers[a.id] = L.marker([a.lat, a.lon]).addTo(layers.amb);
-      ambMarkers[a.id].setLatLng([a.lat, a.lon]).setIcon(ambIcon(a)).setZIndexOffset(tracked && a.incident === tracked.id ? 1000 : 0)
+      ambMarkers[a.id].setLatLng([a.lat, a.lon]).setIcon(ambIcon(a)).setZIndexOffset(isTracked(a) ? 1000 : 0)
         .bindTooltip(`AMB-${a.id} (${a.unit}) · ${a.phase}${a.incident ? ' · ' + a.incident : ''}${a.secondsLeft ? ' · ' + fmt(a.secondsLeft/60) + ' min left' : ''}`);
       if (a.path && $('l-routes').checked) L.polyline(a.path, {live:true, color:css(PHASE[a.phase]), weight:3, opacity:.75, dashArray: a.phase === 'RETURNING' ? '4 6' : null}).addTo(layers.routes);
       L.circleMarker(a.base, {radius:5, color:'#fff', weight:1, fillColor:'#555', fillOpacity:1}).bindTooltip(`base of AMB-${a.id}`).addTo(layers.bases);

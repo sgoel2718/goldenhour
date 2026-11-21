@@ -36,7 +36,7 @@ public final class Triage {
         new Rule(List.of("burn", "fire", "smoke"), Severity.P2_EMERGENT, Specialty.BURNS, "BURNS"),
         new Rule(List.of("seizure", "convuls", "overdose", "poison", "diabetic", "allergic", "anaphyla"), Severity.P2_EMERGENT, Specialty.GENERAL, "MEDICAL EMERGENCY"),
         new Rule(List.of("labour", "labor", "pregnan", "contractions"), Severity.P2_EMERGENT, Specialty.MATERNITY, "MATERNITY"),
-        new Rule(List.of("accident", "collision", "crash", "vehicle", "fall", "fracture", "injur"), Severity.P3_URGENT, Specialty.TRAUMA, "INJURY"),
+        new Rule(List.of("accident", "collision", "crash", "vehicle", "fall", "fell", "fracture", "broken", "injur"), Severity.P3_URGENT, Specialty.TRAUMA, "INJURY"),
         new Rule(List.of("fever", "vomit", "abdominal", "headache", "dizz", "weak", "sick"), Severity.P3_URGENT, Specialty.GENERAL, "ILLNESS"));
 
     private final String mlUrl;

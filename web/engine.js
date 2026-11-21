@@ -205,7 +205,7 @@
     [['burn', 'fire', 'smoke'], 'P2_EMERGENT', 'BURNS', 'BURNS'],
     [['seizure', 'convuls', 'overdose', 'poison', 'diabetic', 'allergic', 'anaphyla'], 'P2_EMERGENT', 'GENERAL', 'MEDICAL EMERGENCY'],
     [['labour', 'labor', 'pregnan', 'contractions'], 'P2_EMERGENT', 'MATERNITY', 'MATERNITY'],
-    [['accident', 'collision', 'crash', 'vehicle', 'fall', 'fracture', 'injur'], 'P3_URGENT', 'TRAUMA', 'INJURY'],
+    [['accident', 'collision', 'crash', 'vehicle', 'fall', 'fell', 'fracture', 'broken', 'injur'], 'P3_URGENT', 'TRAUMA', 'INJURY'],
     [['fever', 'vomit', 'abdominal', 'headache', 'dizz', 'weak', 'sick'], 'P3_URGENT', 'GENERAL', 'ILLNESS']];
   function triage(notes) {
     const t = (notes || '').toLowerCase();
@@ -240,13 +240,42 @@
       this.incidents = []; this.queue = []; this.events = []; this.resp = []; this.p1 = [0, 0]; this.lat = [];
       const now = new Date(new Date().toLocaleString('en-US', { timeZone: d.tz || 'UTC' }));
       this.simStart = (((now.getDay() + 6) % 7) * 24 + now.getHours()) * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      this.wallStart = performance.now();
+      this.wallStart = Date.now();
       this.cache = new Map();
       this.loadMs = performance.now() - t0;
       this.rnd = mulberry(42);
     }
-    now() { return this.simStart + (performance.now() - this.wallStart) / 1000 * this.speed; }
-    setSpeed(x) { this.simStart = this.now(); this.wallStart = performance.now(); this.speed = x; }   // re-anchor: no jump
+    // Wall clock = Date.now() so a saved world can resume after a page refresh with the elapsed time applied.
+    now() { return this.simStart + (Date.now() - this.wallStart) / 1000 * this.speed; }
+    setSpeed(x) { this.simStart = this.now(); this.wallStart = Date.now(); this.speed = x; }   // re-anchor: no jump
+
+    /** Everything needed to resume the live world after a page refresh (routes are node lists; timings recomputed). */
+    snapshot() {
+      const incIds = new Set();
+      const keep = this.incidents.slice(-300);
+      return {
+        v: 1, savedAt: Date.now(), sim: this.now(), speed: this.speed, autoCalls: this.autoCalls, seq: this.seq,
+        incidents: keep, queue: this.queue.map(i => i.id), events: this.events, resp: this.resp.slice(-5000), p1: this.p1,
+        amb: this.amb.map(a => ({ id: a.id, node: a.node, base: a.base, free: a.free,
+          job: a.job ? { phase: a.job.phase, inc: a.job.inc ? a.job.inc.id : null, route: Array.from(a.job.route), start: a.job.start, end: a.job.end } : null })) };
+    }
+    restore(sn) {
+      const byId = new Map(sn.incidents.map(i => [i.id, i]));
+      this.incidents = sn.incidents; this.queue = sn.queue.map(id => byId.get(id)).filter(Boolean);
+      this.events = sn.events || []; this.resp = sn.resp || []; this.p1 = sn.p1 || [0, 0]; this.seq = sn.seq;
+      this.speed = sn.speed; this.autoCalls = sn.autoCalls;
+      this.simStart = sn.sim; this.wallStart = sn.savedAt;               // time kept running while the page was closed
+      for (const s of sn.amb) {
+        const a = this.amb[s.id]; if (!a) continue;
+        a.node = s.node; a.base = s.base; a.free = s.free; a.job = null;
+        if (s.job) {
+          const job = { phase: s.job.phase, inc: s.job.inc ? byId.get(s.job.inc) || null : null, route: s.job.route };
+          job.cum = new Float64Array(job.route.length);
+          for (let i = 1; i < job.route.length; i++) job.cum[i] = job.cum[i - 1] + this.g.edgeWeight(job.route[i - 1], job.route[i]);
+          job.start = s.job.start; job.end = s.job.end; a.job = job;
+        }
+      }
+    }
     route(a, b) {
       const k = a * this.g.n + b;
       let r = this.cache.get(k);
@@ -403,9 +432,18 @@
   async function init(base = 'data/') {
     const d = await (await fetch(base + 'city.json')).json();
     world = new World(d);
+    try {
+      const sn = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if (sn && sn.v === 1 && Date.now() - sn.savedAt < 6 * 3600e3 && sn.amb.length === world.amb.length) world.restore(sn);
+    } catch (e) { /* storage blocked or old format: start fresh */ }
+    const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(world.snapshot())); } catch (e) { /* private mode */ } };
     setInterval(() => world.tick(0.2 * world.speed), 200);
+    setInterval(save, 2000);
+    addEventListener('pagehide', save);
     return world;
   }
+  const SAVE_KEY = 'goldenhour-world-v1';
+  function reset() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } world = null; }
   async function api(method, path, body) {
     const w = world, g = w.g, url = new URL(path, location.href), p = url.pathname.replace(/^.*\/api\/v1\//, '');
     if (p === 'info') {
@@ -413,7 +451,12 @@
       for (let v = 0; v < g.n; v++) { a0 = Math.min(a0, g.lat[v]); a1 = Math.max(a1, g.lat[v]); o0 = Math.min(o0, g.lon[v]); o1 = Math.max(o1, g.lon[v]); }
       return [200, { city: w.city, nodes: g.n, edges: g.edgeCount, bounds: [[a0, o0], [a1, o1]], mode: 'browser', loadMs: w.loadMs }];
     }
-    if (p === 'state') return [200, w.state()];
+    if (p === 'state') {
+      const st = w.state(), ids = url.searchParams.get('ids');
+      if (ids) st.mine = ids.split(',').map(id => w.incidents.find(i => i.id === id)).filter(Boolean)
+        .map(i => ({ ...incJson(i), ambulance: i.ambulance ?? null, responseMin: i.responseMin ?? null, hospital: i.hospital >= 0 ? w.hospitals[i.hospital].name : null }));
+      return [200, st];
+    }
     if (p === 'incidents' && method === 'POST') {
       if (typeof body.lat !== 'number' || typeof body.lon !== 'number') return [400, { error: 'lat/lon must be numbers' }];
       const r = w.report(body.lat, body.lon, String(body.notes || '').slice(0, 1000), 'browser');
@@ -440,5 +483,5 @@
     return [404, { error: 'not found' }];
   }
 
-  window.GH = { init, api, triage, Heap, Graph, Dijkstra, AStar, Bidirectional, CH };
+  window.GH = { init, api, reset, triage, Heap, Graph, Dijkstra, AStar, Bidirectional, CH };
 })();

@@ -14,7 +14,7 @@ RULES = [
     (("burn", "fire", "smoke"), "P2_EMERGENT", "BURNS", "BURNS"),
     (("seizure", "convuls", "overdose", "poison", "diabetic", "allergic", "anaphyla"), "P2_EMERGENT", "GENERAL", "MEDICAL EMERGENCY"),
     (("labour", "labor", "pregnan", "contractions"), "P2_EMERGENT", "MATERNITY", "MATERNITY"),
-    (("accident", "collision", "crash", "vehicle", "fall", "fracture", "injur"), "P3_URGENT", "TRAUMA", "INJURY"),
+    (("accident", "collision", "crash", "vehicle", "fall", "fell", "fracture", "broken", "injur"), "P3_URGENT", "TRAUMA", "INJURY"),
     (("fever", "vomit", "abdominal", "headache", "dizz", "weak", "sick"), "P3_URGENT", "GENERAL", "ILLNESS"),
 ]
 SEVERITIES = ["P1_CRITICAL", "P2_EMERGENT", "P3_URGENT", "P4_ROUTINE"]
