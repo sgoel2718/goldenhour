@@ -438,6 +438,14 @@
   let world = null;
   /** Load a city bundle: gzip-compressed JSON inflated in the browser (DecompressionStream), plain JSON as fallback. */
   async function loadBundle(base) {
+    // .b64 = base64 text of the gzip bundle (text, so free static hosts that refuse binary files accept it)
+    try {
+      const r = await fetch(base + 'city.b64');
+      if (r.ok && 'DecompressionStream' in window) {
+        const blob = await (await fetch('data:application/octet-stream;base64,' + (await r.text()).trim())).blob();
+        return JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());
+      }
+    } catch (e) { /* try the binary .gz */ }
     try {
       const r = await fetch(base + 'city.json.gz');
       if (r.ok && 'DecompressionStream' in window) {

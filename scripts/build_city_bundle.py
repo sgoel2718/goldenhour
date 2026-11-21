@@ -11,6 +11,7 @@ For each city:
     python scripts/build_city_bundle.py            # every data/<slug> that has nodes.csv
     python scripts/build_city_bundle.py pune
 """
+import base64
 import csv
 import gzip
 import json
@@ -130,7 +131,8 @@ def build(slug):
     bundle["country"], bundle["emergency"] = c.cc, EMERGENCY.get(c.cc, "112")
     raw = json.dumps(bundle, separators=(",", ":")).encode()
     gz = gzip.compress(raw, 9)
-    (out.parent / "city.json.gz").write_bytes(gz)
+    (out.parent / "city.b64").write_text(base64.b64encode(gz).decode())   # text: accepted by hosts that refuse binary files
+    (out.parent / "city.json.gz").unlink(missing_ok=True)
     out.unlink()                                           # ship only the compressed bundle
     nodes = load_nodes(city)
     lats, lons = [a for a, _ in nodes], [o for _, o in nodes]
