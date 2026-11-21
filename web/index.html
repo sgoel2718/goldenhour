@@ -137,7 +137,7 @@ tr.win td{color:var(--avail);font-weight:600}
       <div class="card">
         <h3>Map layers</h3>
         <div class="toggle">
-          <label><input type="checkbox" id="l-demand" checked> forecast demand</label>
+          
           <label><input type="checkbox" id="l-routes" checked> routes</label>
           <label><input type="checkbox" id="l-bases"> bases</label>
         </div>
@@ -145,6 +145,7 @@ tr.win td{color:var(--avail);font-weight:600}
           <span><i style="background:var(--avail)"></i>available</span><span><i style="background:var(--enroute)"></i>en route</span>
           <span><i style="background:var(--scene)"></i>on scene</span><span><i style="background:var(--transport)"></i>to hospital</span>
           <span><i style="background:var(--handover)"></i>handover</span><span><i style="background:var(--returning)"></i>returning</span>
+          <span style="flex-basis:100%">▭ dashed box = area this demo covers (central Chennai, about 6 km around T. Nagar)</span>
         </div>
       </div>
       <div class="card"><h3>Decision log</h3><div class="log" id="log"></div></div>
@@ -190,6 +191,8 @@ async function boot() {
   catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = '…or tap the spot on the map.'; $('modeTag').textContent = 'browser edition · no server'; }
   const i = (await call('GET', '/api/v1/info')).json;
   mapBounds = i.bounds;
+  L.rectangle(i.bounds, {color:css('--accent'), weight:1.5, dashArray:'6 6', fill:false, interactive:false}).addTo(map)
+    .bindTooltip('Service area covered by this demo', {sticky:true});
   if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
   // the page may be inside an iframe (Hugging Face) that is sized after load: re-measure before fitting
   let centred = false;
@@ -450,12 +453,11 @@ async function poll() {
     });
     $('log').innerHTML = s.events.map(e => `<div>${esc(e.text)}</div>`).join('');
     updateLive(s);
-    if (!demandLoaded) loadDemand();
   } catch (e) { /* server restarting: keep polling */ }
 }
 boot();
-['l-demand','l-routes','l-bases'].forEach(id => $(id).onchange = () => {
-  const lyr = {['l-demand']:layers.demand, ['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
+['l-routes','l-bases'].forEach(id => $(id).onchange = () => {
+  const lyr = {['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
   $(id).checked ? lyr.addTo(map) : map.removeLayer(lyr);
 });
 
