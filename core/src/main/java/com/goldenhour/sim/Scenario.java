@@ -30,7 +30,11 @@ public final class Scenario {
     /** Named hospitals with known capabilities (optional {@code hospitals.csv}); otherwise OSM facilities are used. */
     public final List<String> hospitalNames = new ArrayList<>();
     public final List<EnumSet<Specialty>> hospitalSpecs = new ArrayList<>();
+    /** Published phone number (official hospital website) or empty when not verified. */
+    public final List<String> hospitalPhones = new ArrayList<>();
     public String name = "City", timeZone = "UTC";
+
+    public String phoneOf(int hospitalId) { return hospitalId >= 0 && hospitalId < hospitalPhones.size() ? hospitalPhones.get(hospitalId) : ""; }
 
     public static Scenario load(Path dir, DispatchEngine engine) throws IOException {
         Scenario s = new Scenario();
@@ -50,6 +54,7 @@ public final class Scenario {
                 EnumSet<Specialty> set = EnumSet.noneOf(Specialty.class);
                 for (String x : r[3].split("\\|")) set.add(Specialty.valueOf(x.trim()));
                 s.hospitalSpecs.add(set);
+                s.hospitalPhones.add(r.length > 4 ? r[4].trim() : "");
             }
         } else {
             for (String[] r : rows(dir.resolve("facilities.csv")))

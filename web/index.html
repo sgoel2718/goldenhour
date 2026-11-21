@@ -27,7 +27,7 @@ nav button.on{background:var(--panel2);border-color:var(--line);color:var(--ink)
 .kpi{display:flex;flex-direction:column;min-width:64px}
 .kpi b{font:600 17px/1.1 "JetBrains Mono",monospace}
 .kpi span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
-main{display:grid;grid-template-columns:1fr 380px;height:calc(100% - 58px)}
+main{display:grid;grid-template-columns:1fr 380px;height:calc(100% - 92px)}
 #map{height:100%;background:#0d1117}
 aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
 .card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
@@ -71,6 +71,15 @@ tr.win td{color:var(--avail);font-weight:600}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{background:none;border:0;color:var(--ink2);padding:5px 10px;cursor:pointer;font:inherit;font-size:12px}
 .seg button.on{background:var(--accent);color:#1a1200;font-weight:700}
+.step{font-size:13px;color:var(--ink)}
+#addr{flex:1;min-width:0;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit}
+.banner{background:#5a1414;color:#ffd9d9;padding:7px 16px;font-size:13px;text-align:center}
+.banner a{color:#fff;font-weight:700}
+.contacts{display:grid;gap:6px;margin:10px 0}
+.contact{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.contact small{display:block;color:var(--muted)}
+.callbtn{background:var(--avail);color:#062;font-weight:700;border-radius:8px;padding:6px 10px;text-decoration:none;white-space:nowrap}
+.callbtn.alt{background:none;border:1px solid var(--line);color:var(--ink2);font-weight:500}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
 .dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
@@ -92,16 +101,21 @@ tr.win td{color:var(--avail);font-weight:600}
     <div class="kpi"><b id="k-p99">—</b><span>dispatch p99</span></div>
   </div>
 </header>
+<div class="banner">⚠️ Demo & simulation only: these ambulances are not real. In a real emergency in India call <a href="tel:108">108</a> (ambulance) or <a href="tel:112">112</a>.</div>
 <main id="mainLive">
   <div id="map"></div>
   <aside>
     <section class="view on" id="v-live" style="flex-direction:column;gap:14px">
       <div class="card">
         <h3>Report an emergency</h3>
-        <div class="hint" id="pickHint">Click the map to set the caller's location.</div>
+        <div class="step"><b>1 · Where is the patient?</b></div>
+        <div class="row" style="flex-wrap:wrap;margin:6px 0"><button class="go" id="locate">📍 Use my current location</button></div>
+        <form id="searchForm" class="row" style="margin:6px 0"><input id="addr" placeholder="…or type an area / landmark, e.g. Mylapore tank" autocomplete="off"><button class="ghost" type="submit">Find</button></form>
+        <div class="hint" id="pickHint">…or tap the spot on the map.</div>
+        <div class="step" style="margin-top:10px"><b>2 · What happened?</b></div>
         <textarea id="notes" placeholder="What the caller says…">my dad is sweating and has crushing chest pain</textarea>
         <div class="chips" id="chips"></div>
-        <div class="row" style="flex-wrap:wrap"><button class="go" id="send">Dispatch</button><button class="ghost" id="locate">📍 Use my location</button><button class="ghost" id="auto">Pause simulated calls</button></div>
+        <div class="row" style="flex-wrap:wrap"><button class="go" id="send">🚑 Send ambulance</button><button class="ghost" id="auto">Pause simulated calls</button></div>
         <div class="row" style="margin-top:10px"><span class="hint">Clock speed</span>
           <div class="seg" id="speed"><button data-s="1">Real time</button><button data-s="10">10×</button><button data-s="60">60×</button></div></div>
       </div>
@@ -162,7 +176,7 @@ async function call(method, path, body) {
 }
 async function boot() {
   try { const r = await fetch(API + '/api/v1/info'); if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw 0; }
-  catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = 'Click the map to set the caller\'s location.'; $('modeTag').textContent = 'browser edition · no server'; }
+  catch { MODE = 'browser'; $('pickHint').textContent = 'Loading road network into your browser…'; await GH.init(); $('pickHint').textContent = '…or tap the spot on the map.'; $('modeTag').textContent = 'browser edition · no server'; }
   const i = (await call('GET', '/api/v1/info')).json;
   mapBounds = i.bounds;
   if (i.city) { $('cityTag').textContent = i.city; document.title = `GoldenHour — ${i.city}`; }
@@ -204,7 +218,8 @@ map.on('click', e => {
 });
 
 $('send').onclick = async () => {
-  const c = picked || map.getCenter();
+  if (!picked) { $('pickHint').innerHTML = '<b style="color:var(--p2)">Set the patient\'s location first</b>: use your location, type an area, or tap the map.'; return; }
+  const c = picked;
   const btn = $('send'); btn.disabled = true;
   try {
     const r = await call('POST', '/api/v1/incidents', {lat:c.lat, lon:c.lng, notes:$('notes').value});
@@ -228,6 +243,11 @@ function renderDecision(d) {
   if (a) {
     const slow = d.candidates.filter(c => c.ambulance !== best && c.straightLineKm < d.candidates.find(x => x.ambulance === best).straightLineKm);
     html += `<p class="why">Why: AMB-${a.ambulance} is the fastest by <b>road</b> (${fmt(a.etaMin)} min)${slow.length ? `, even though AMB-${slow[0].ambulance} is closer in a straight line` : ''}. The patient goes to <b>${esc(a.hospital)}</b> because it is the nearest hospital that treats <b>${esc(t.need.toLowerCase())}</b> cases.</p>`;
+    const hp = a.hospitalPhone;
+    html += `<div class="contacts">
+      <div class="contact"><div>🚑 <b>AMB-${a.ambulance}</b> (${a.unit === 'ALS' ? 'paramedic' : 'basic'} crew)<small>Simulated unit. Real crews are reached through the 108 control room: quote ${esc(d.incident.id)}.</small></div><a class="callbtn" href="tel:108">Call 108</a></div>
+      <div class="contact"><div>🏥 <b>${esc(a.hospital)}</b><small>${hp ? 'Number from the hospital\'s official website' : 'Number not verified here: opens Google Maps with the hospital\'s listing and phone'}</small></div>${hp ? `<a class="callbtn" href="tel:${hp.replace(/[^0-9+]/g, '')}">Call ${esc(hp)}</a>` : ''}<a class="callbtn alt" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.hospital + ' Chennai')}">Maps</a></div>
+    </div>`;
     html += `<p style="margin:8px 0"><b>AMB-${a.ambulance}</b> (${a.unit}) dispatched · ETA <b>${fmt(a.etaMin)} min</b> → ${esc(a.hospital)} (+${fmt(a.transportMin)} min) · decided in ${fmt(d.dispatchMs,2)} ms</p>`;
     if (a.path && a.path.length) { const pl = L.polyline(a.path, {color:css('--accent'), weight:5, opacity:.9}).addTo(layers.routes); setTimeout(() => layers.routes.removeLayer(pl), 6000); }
   } else html += `<p style="margin:8px 0">No unit free — queued by severity, then arrival time.</p>`;
@@ -243,13 +263,35 @@ function renderDecision(d) {
 $('speed').onclick = async e => { const v = +e.target.dataset.s; if (v) { await call('POST', '/api/v1/sim', {speed: v}); poll(); } };
 
 let mapBounds = null;
+function setPicked(ll, text) {
+  picked = ll;
+  layers.pick.clearLayers();
+  L.circleMarker(ll, {radius:9, color:css('--accent'), weight:3, fillOpacity:.15}).addTo(layers.pick);
+  $('pickHint').textContent = text;
+}
+$('searchForm').onsubmit = async e => {
+  e.preventDefault();
+  const q = $('addr').value.trim();
+  if (!q) return;
+  $('pickHint').textContent = 'Searching…';
+  const [[a0, o0], [a1, o1]] = mapBounds;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&bounded=1&viewbox=${o0},${a1},${o1},${a0}&q=${encodeURIComponent(q)}`;
+    const res = await (await fetch(url, {headers: {'Accept-Language': 'en'}})).json();
+    if (!res.length) { $('pickHint').textContent = `No match for "${q}" inside the mapped area. Try a nearby landmark or tap the map.`; return; }
+    const ll = L.latLng(+res[0].lat, +res[0].lon);
+    setPicked(ll, `📍 ${res[0].display_name.split(',').slice(0, 3).join(',')}`);
+    map.setView(ll, Math.max(map.getZoom(), 15));
+  } catch { $('pickHint').textContent = 'Address search is unavailable right now. Tap the map instead.'; }
+};
 $('locate').onclick = () => {
-  if (!navigator.geolocation) { $('pickHint').textContent = 'Your browser does not share location. Click the map instead.'; return; }
+  if (!navigator.geolocation) { $('pickHint').textContent = 'Your browser does not share location. Type an area or tap the map instead.'; return; }
+  const inFrame = window.self !== window.top;
   $('pickHint').textContent = 'Finding your location…';
   navigator.geolocation.getCurrentPosition(p => {
     const ll = L.latLng(p.coords.latitude, p.coords.longitude);
     if (mapBounds && !L.latLngBounds(mapBounds).pad(0.02).contains(ll)) {
-      $('pickHint').textContent = `You are at ${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}, outside the mapped area (${$('cityTag').textContent}, about 6 km around the centre). Click the map instead.`;
+      $('pickHint').textContent = `You are at ${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}, outside the mapped area (${$('cityTag').textContent}, about 6 km around the centre). Type an area or tap the map instead.`;
       return;
     }
     picked = ll;
@@ -258,7 +300,11 @@ $('locate').onclick = () => {
     L.circle(ll, {radius: p.coords.accuracy, color:css('--accent'), weight:1, fillOpacity:.05}).addTo(layers.pick);
     map.setView(ll, Math.max(map.getZoom(), 15));
     $('pickHint').textContent = `Using your location: ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)} (±${Math.round(p.coords.accuracy)} m)`;
-  }, err => { $('pickHint').textContent = 'Location permission was denied or unavailable. Click the map instead.'; }, {enableHighAccuracy:true, timeout:10000});
+  }, err => {
+    $('pickHint').innerHTML = inFrame
+      ? `This page is embedded (Hugging Face), and embedded pages are not allowed to ask for location. <a href="${location.href}" target="_blank" rel="noopener" style="color:var(--accent)">Open the full page</a> and press the button again, or type an area below.`
+      : 'Location permission was denied or unavailable. Allow location for this site in the browser, or type an area / tap the map.';
+  }, {enableHighAccuracy:true, timeout:10000});
 };
 
 $('auto').onclick = async () => {
@@ -296,7 +342,7 @@ async function loadDemand() {
   const d = (await call('GET', '/api/v1/demand')).json;
   layers.demand.clearLayers();
   const max = Math.max(...d.zones.map(z => z.perWeek));
-  d.zones.forEach(z => L.circle([z.lat, z.lon], {radius: 60 + 260 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.04 + .2 * (z.perWeek / max) ** 2, bubblingMouseEvents:true})
+  d.zones.forEach(z => L.circleMarker([z.lat, z.lon], {radius: 3 + 9 * Math.sqrt(z.perWeek / max), stroke:false, fillColor:css('--accent'), fillOpacity:.15 + .35 * z.perWeek / max, bubblingMouseEvents:true})
     .bindTooltip(`zone ${z.id}: ${fmt(z.perWeek,1)} calls/week forecast, ${fmt(z.nowPerHour,3)}/h now`).addTo(layers.demand));
   demandLoaded = true;
 }
@@ -323,7 +369,7 @@ async function poll() {
     document.querySelectorAll('#speed button').forEach(b => b.classList.toggle('on', +b.dataset.s === s.speed));
 
     if (layers.hosp.getLayers().length === 0) s.hospitals.forEach(h => L.marker([h.lat, h.lon], {icon:L.divIcon({className:'', html:'<div style="width:20px;height:20px;border-radius:5px;background:#fff;color:#d00;font:900 16px/20px sans-serif;text-align:center">+</div>', iconSize:[20,20], iconAnchor:[10,10]})})
-      .bindTooltip(`<b>${esc(h.name)}</b><br>${h.specialties.join(', ')}`).addTo(layers.hosp));
+      .bindPopup(`<b>${esc(h.name)}</b><br>${h.specialties.join(', ')}<br>${h.phone ? `📞 <a href="tel:${h.phone.replace(/[^0-9+]/g, '')}">${esc(h.phone)}</a> · ` : ''}<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(h.name + ' Chennai')}">Google Maps</a>`).addTo(layers.hosp));
 
     layers.routes.eachLayer(l => { if (l.options.live) layers.routes.removeLayer(l); });
     layers.bases.clearLayers();

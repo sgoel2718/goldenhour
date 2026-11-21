@@ -301,7 +301,7 @@
       for (let i = 0; i < r.nodes.length; i += step) path.push([g.lat[r.nodes[i]], g.lon[r.nodes[i]]]);
       const last = r.nodes[r.nodes.length - 1]; path.push([g.lat[last], g.lon[last]]);
       return { ambulance: a.id, unit: a.unit, etaMin: r.seconds / 60, hospital: h >= 0 ? this.hospitals[h].name : 'none',
-        transportMin: h >= 0 ? this.toHospital[h][inc.node] / 60 : null, reason, path };
+        transportMin: h >= 0 ? this.toHospital[h][inc.node] / 60 : null, hospitalPhone: h >= 0 ? this.hospitals[h].phone || '' : '', reason, path };
     }
     startJob(a, job, nodes, t, duration) {
       job.route = nodes; job.cum = new Float64Array(nodes.length);
@@ -385,7 +385,7 @@
       return {
         simTime: t, clock: clock(t), speed: this.speed, autoCalls: this.autoCalls, ambulances: ambs,
         incidents: this.incidents.slice(-40).map(i => ({ ...incJson(i), ambulance: i.ambulance ?? null, responseMin: i.responseMin ?? null })),
-        hospitals: this.hospitals.map(h => ({ id: h.id, name: h.name, lat: g.lat[h.node], lon: g.lon[h.node], specialties: h.specialties })),
+        hospitals: this.hospitals.map(h => ({ id: h.id, name: h.name, lat: g.lat[h.node], lon: g.lon[h.node], specialties: h.specialties, phone: h.phone || '' })),
         stats: { calls: this.seq, waiting: this.queue.length, busy: this.amb.filter(a => a.job && a.job.phase !== 'RETURNING').length,
           p1Within8: this.p1[1] ? this.p1[0] / this.p1[1] : null, medianResponseMin: sorted.length ? sorted[sorted.length >> 1] : null,
           dispatchP99Ms: ls.length ? +ls[Math.floor(ls.length * 0.99)].toFixed(2) : null },

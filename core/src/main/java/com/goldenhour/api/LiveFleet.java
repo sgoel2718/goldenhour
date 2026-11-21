@@ -277,7 +277,7 @@ public final class LiveFleet {
             incs.add(m);
         }
         List<Object> hs = new ArrayList<>();
-        for (var h : engine.hospitals()) hs.add(Map.of("id", h.id, "name", h.name, "lat", g.lat(h.node), "lon", g.lon(h.node), "specialties", new ArrayList<>(h.specialties)));
+        for (var h : engine.hospitals()) hs.add(Map.of("id", h.id, "name", h.name, "lat", g.lat(h.node), "lon", g.lon(h.node), "specialties", new ArrayList<>(h.specialties), "phone", sc.phoneOf(h.id)));
         List<Double> sorted = new ArrayList<>(allResponses);
         sorted.sort(Double::compare);
         Map<String, Object> stats = new LinkedHashMap<>();
@@ -326,6 +326,7 @@ public final class LiveFleet {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("ambulance", a.ambulanceId()); m.put("unit", a.unit()); m.put("etaMin", a.etaSeconds() / 60);
         m.put("hospital", a.hospitalName()); m.put("transportMin", a.transportSeconds() / 60); m.put("reason", a.reason());
+        m.put("hospitalPhone", sc.phoneOf(a.hospitalId()));
         List<Object> path = new ArrayList<>();
         int step = Math.max(1, a.route().size() / 200);
         for (int i = 0; i < a.route().size(); i += step) path.add(List.of(g.lat(a.route().get(i)), g.lon(a.route().get(i))));
