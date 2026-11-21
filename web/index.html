@@ -113,6 +113,11 @@ tr.win td{color:var(--avail);font-weight:600}
 @keyframes flash{from{box-shadow:0 0 0 0 rgba(255,77,79,.6)}to{box-shadow:0 0 0 10px rgba(255,77,79,0)}}
 .crewbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
 .crewbtns a,.crewbtns button{text-align:center;padding:12px;border-radius:10px;font-weight:700;text-decoration:none;border:0;cursor:pointer;font:inherit;font-weight:700}
+.phone{position:absolute;left:12px;bottom:12px;z-index:900;width:330px;max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:2px solid var(--line);border-radius:22px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.phonebar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.phonebar button{margin-left:auto;padding:2px 9px}
+#mainLive{position:relative}
+@media (max-width:900px){.phone{position:fixed;left:8px;right:8px;width:auto;bottom:8px;max-height:60vh}}
 .why{color:var(--ink2);font-size:13px;margin:6px 0}
 .dark-tiles{filter:grayscale(1) invert(1) brightness(.8) contrast(.95)}
 :root[data-theme="light"] .dark-tiles{filter:none}
@@ -254,7 +259,7 @@ async function boot() {
     };
     if (urlPlace) {                                   // a city built live from OpenStreetMap
       const q = new URLSearchParams(location.search), [plat, plon] = urlPlace.split(',').map(Number);
-      const name = q.get('name') || 'Selected area', cc = (q.get('cc') || '').toLowerCase(), radius = +(q.get('r') || 4000);
+      const name = q.get('name') || 'Selected area', cc = (q.get('cc') || '').toLowerCase(), radius = +(q.get('r') || 3000);
       sel.insertAdjacentHTML('afterbegin', `<option value="__place">${esc(name)}</option>`); sel.value = '__place';
       map.setView([plat, plon], 13);
       const key = `place:${plat.toFixed(4)},${plon.toFixed(4)},${radius}`;
@@ -306,10 +311,11 @@ async function boot() {
   const pick = new URLSearchParams(location.search).get('pick');
   if (!pick && navigator.geolocation && window.self === window.top) {
     $('pickHint').textContent = 'Finding your location…';
-    navigator.geolocation.getCurrentPosition(p => { if (useMyPosition(p)) centred = true; },
-      () => { $('pickHint').textContent = 'Location not shared. Type an area or tap the spot on the map.'; }, {enableHighAccuracy:true, timeout:10000});
+    centred = true;
+    locateMe(() => { centred = false; fit(); $('pickHint').textContent = 'Location not shared. Type an area or tap the spot on the map.'; });
   }
-  if (pick) { const [pa, po] = pick.split(',').map(Number); centred = true; map.setView([pa, po], 16); setPicked(L.latLng(pa, po), '📍 Patient location from your search'); applyPending(); }
+  if (pick) { const [pa, po] = pick.split(',').map(Number); centred = true; map.setView([pa, po], 16); setPicked(L.latLng(pa, po), '📍 Patient location from your search'); applyPending();
+    placeName(pa, po, true).then(n => { if (n && !$('adLine').value) $('adLine').value = n; }); }
   setInterval(poll, 1000); poll();
 }
 
@@ -344,6 +350,7 @@ map.on('click', e => {
 $('send').onclick = async () => {
   if (!picked) { $('pickHint').innerHTML = '<b style="color:var(--p2)">Set the patient\'s location first</b>: use your location, type an area, or tap the map.'; return; }
   const c = picked;
+  unlockAudio();                                   // this click lets the in-page driver's phone ring
   const btn = $('send'); btn.disabled = true;
   try {
     const r = await call('POST', '/api/v1/incidents', {lat:c.lat, lon:c.lng, notes:$('notes').value});
@@ -357,6 +364,7 @@ $('send').onclick = async () => {
       lat: d.incident.lat, lon: d.incident.lon, amb: a ? a.ambulance : null, hospital: a ? a.hospital : null,
       hospitalPhone: a ? a.hospitalPhone : '', sentAt: Date.now(), doneAt: null, html, address: addressDetails(), ackAt: null});
     selectedId = d.incident.id; follow = true; saveCalls();
+    if (a) openPhone(a.ambulance);
     $('track').hidden = false; document.querySelector('aside').scrollTo({top:0, behavior:'smooth'}); poll();
   } finally { btn.disabled = false; }
 };
@@ -436,25 +444,39 @@ $('searchForm').onsubmit = async e => {
     });
   } catch { $('pickHint').textContent = 'Address search is unavailable right now. Tap the map instead.'; }
 };
+const meLayer = L.layerGroup().addTo(map);
+/** Always show where the visitor is (blue dot, like Google Maps), then use it as the patient location if it is inside the city. */
 function useMyPosition(p) {
-  const ll = L.latLng(p.coords.latitude, p.coords.longitude);
-  map.setView(ll, 15);
-  setPicked(ll, `📍 Using your location (±${Math.round(p.coords.accuracy)} m)`).then(ok => {
-    if (!ok) return;
-    L.circle(ll, {radius: p.coords.accuracy, color:css('--accent'), weight:1, fillOpacity:.05}).addTo(layers.pick);
-    placeName(ll.lat, ll.lng, true).then(n => { if (n && picked === ll) $('pickHint').textContent = `📍 Your location: ${n} (±${Math.round(p.coords.accuracy)} m)`; });
+  const ll = L.latLng(p.coords.latitude, p.coords.longitude), acc = Math.round(p.coords.accuracy);
+  meLayer.clearLayers();
+  L.circle(ll, {radius: acc, color:'#4ea1ff', weight:1, fillColor:'#4ea1ff', fillOpacity:.12, interactive:false}).addTo(meLayer);
+  L.circleMarker(ll, {radius:8, color:'#fff', weight:3, fillColor:'#1a73e8', fillOpacity:1}).bindTooltip('You are here').addTo(meLayer);
+  map.setView(ll, 16);
+  setPicked(ll, `📍 Using your location (±${acc} m)`).then(ok => {
+    if (!ok) {
+      $('pickHint').innerHTML = `🔵 You are here, outside ${esc($('cityTag').textContent)}'s map. <button class="go" id="buildMe" style="margin-top:6px">Set up GoldenHour around me</button>`;
+      $('buildMe').onclick = () => buildAround(ll.lat, ll.lng);
+      return;
+    }
+    placeName(ll.lat, ll.lng, true).then(n => { if (n && picked === ll) { $('pickHint').textContent = `📍 Your location: ${n} (±${acc} m)`; $('adLine').value = $('adLine').value || n; } });
   });
   return true;
+}
+// fast first fix (Wi-Fi / cell, usually < 1 s), then refine with GPS in the background
+function locateMe(onFail) {
+  let got = false;
+  navigator.geolocation.getCurrentPosition(p => { got = true; useMyPosition(p); }, err => { if (!got) onFail(err); }, {enableHighAccuracy:false, maximumAge:120000, timeout:6000});
+  navigator.geolocation.getCurrentPosition(p => { if (!got || p.coords.accuracy < 100) { got = true; useMyPosition(p); } }, () => {}, {enableHighAccuracy:true, maximumAge:0, timeout:15000});
 }
 $('locate').onclick = () => {
   if (!navigator.geolocation) { $('pickHint').textContent = 'Your browser does not share location. Type an area or tap the map instead.'; return; }
   const inFrame = window.self !== window.top;
   $('pickHint').textContent = 'Finding your location…';
-  navigator.geolocation.getCurrentPosition(p => useMyPosition(p), err => {
+  locateMe(err => {
     $('pickHint').innerHTML = inFrame
       ? `This page is embedded (Hugging Face), and embedded pages are not allowed to ask for location. <a href="${location.href}" target="_blank" rel="noopener" style="color:var(--accent)">Open the full page</a> and press the button again, or type an area below.`
       : 'Location permission was denied or unavailable. Allow location for this site in the browser, or type an area / tap the map.';
-  }, {enableHighAccuracy:true, timeout:10000});
+  });
 };
 
 $('auto').onclick = async () => {
@@ -561,7 +583,7 @@ function updateLive(s) {
       ${isSel ? `<div class="steps">${STEPS.map((_, i) => `<span class="${i < st.step || st.step === 5 ? 'on' : i === st.step ? 'cur' : ''}"></span>`).join('')}</div>
       <div class="labels">${STEPS.map((x, i) => `<span class="${i === st.step && st.step < 5 ? 'cur' : ''}">${x}</span>`).join('')}</div>` : ''}
       ${isSel ? `<div class="hint" style="margin-top:6px">${c.ackAt ? `✅ Crew acknowledged at ${new Date(c.ackAt).toLocaleTimeString()}` : st.amb ? '📲 Alert sent to the crew app, waiting for acknowledgement' : ''}</div>` : ''}
-      ${isSel ? `<div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:${EMERG}">Call ${EMERG}</a>${st.amb ? `<a class="callbtn alt" target="_blank" rel="noopener" href="?crew=${st.amb.id}">📲 Crew app AMB-${st.amb.id}</a>` : ''}${st.amb && !follow ? '<button class="ghost followBtn">Follow ambulance</button>' : ''}</div>` : '<div class="hint">Tap to track this call</div>'}
+      ${isSel ? `<div class="row" style="margin-top:8px;flex-wrap:wrap"><a class="callbtn" href="tel:${EMERG}">Call ${EMERG}</a>${st.amb ? `<button class="ghost phoneBtn" data-amb="${st.amb.id}">📲 Driver's phone AMB-${st.amb.id}</button>` : ''}${st.amb && !follow ? '<button class="ghost followBtn">Follow ambulance</button>' : ''}</div>` : '<div class="hint">Tap to track this call</div>'}
     </div>`;
   }
   html += `<div class="hint" style="margin-top:6px">${s.speed === 1 ? `Real time · ${esc(s.clock)}` : `Clock running ${s.speed}× · ${esc(s.clock)}`} · kept on this device until finished</div>`;
@@ -569,6 +591,7 @@ function updateLive(s) {
   box.querySelectorAll('.callcard').forEach(el => el.onclick = e => {
     if (e.target.closest('a')) return;
     if (e.target.classList.contains('followBtn')) { follow = true; poll(); return; }
+    if (e.target.classList.contains('phoneBtn')) { unlockAudio(); openPhone(+e.target.dataset.amb); poll(); return; }
     if (selectedId !== el.dataset.id) { selectedId = el.dataset.id; follow = true; placeCache = {t: 0, key: '', name: ''}; poll(); }
   });
   $('resetBtn').onclick = () => {
@@ -635,7 +658,7 @@ async function poll() {
 }
 // ---------------------------------------------------------------- any city in the world
 function goPlace(lat, lon, name, cc, pickHere) {
-  location.search = `?place=${(+lat).toFixed(5)},${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}&cc=${encodeURIComponent(cc || '')}&r=4000` +
+  location.search = `?place=${(+lat).toFixed(5)},${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}&cc=${encodeURIComponent(cc || '')}&r=3000` +
     (pickHere ? `&pick=${(+lat).toFixed(5)},${(+lon).toFixed(5)}` : '');
 }
 $('changeCity').onclick = () => { $('worldCard').hidden = false; document.querySelector('aside').scrollTo({top: 0, behavior: 'smooth'}); $('worldQ').focus(); };
@@ -646,7 +669,7 @@ async function buildAround(lat, lon) {
     const r = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${lat}&lon=${lon}`, {headers: {'Accept-Language': 'en'}})).json();
     const a = r.address || {}; name = a.city || a.town || a.county || a.state_district || a.state || name; cc = a.country_code || '';
   } catch (e) { }
-  goPlace(lat, lon, name, cc);
+  goPlace(lat, lon, name, cc, true);
 }
 $('worldNear').onclick = () => {
   if (!navigator.geolocation || window.self !== window.top) { $('worldOut').innerHTML = `Location needs the full page: <a href="${location.href}" target="_blank" rel="noopener" style="color:var(--accent)">open it</a>, or search for a city below.`; return; }
@@ -757,138 +780,120 @@ function applyPending() {
 // ---------------------------------------------------------------- crew app link: the dispatcher broadcasts to crew screens
 // Same device: BroadcastChannel between tabs. Production: push (FCM/APNs) + WebSocket to the crew tablet, with radio as fallback.
 const crewChannel = 'BroadcastChannel' in window ? new BroadcastChannel('goldenhour-crew') : null;
-function broadcastToCrew(s) {
-  if (!crewChannel) return;
-  const details = {};
-  for (const c of myCalls) details[c.id] = {address: c.address, notes: c.notes, severity: c.severity, category: c.category, hospital: c.hospital, hospitalPhone: c.hospitalPhone, lat: c.lat, lon: c.lon, ackAt: c.ackAt};
-  crewChannel.postMessage({type: 'state', city: $('cityTag').textContent, emergency: EMERG, clock: s.clock, speed: s.speed,
-    ambulances: s.ambulances, incidents: [...(s.mine || []), ...s.incidents], hospitals: s.hospitals, details});
-}
+function broadcastToCrew(s) { if (crewChannel) crewChannel.postMessage(crewMessage(s)); updatePhone(s); }
 if (crewChannel) crewChannel.onmessage = e => {
   const m = e.data;
-  if (m.type === 'ack') { const c = myCalls.find(x => x.id === m.incident); if (c && !c.ackAt) { c.ackAt = m.at; saveCalls(); poll(); } }
+  if (m.type === 'ack') ackCall(m.incident);
 };
 
-// ---------------------------------------------------------------- crew app (open with ?crew=<ambulance id>)
+// ---------------------------------------------------------------- crew app
+// One shared alarm. Browsers only allow sound after a user gesture *in the same page*, so the dispatcher unlocks it
+// on "Send ambulance" and the in-page driver's phone can ring with no extra tap. (A separate tab has to be tapped once.)
+let alarmCtx = null;
+function unlockAudio() { try { alarmCtx = alarmCtx || new (window.AudioContext || window.webkitAudioContext)(); alarmCtx.resume(); } catch (e) { } }
+function beep() {
+  try {
+    if (!alarmCtx || alarmCtx.state !== 'running') return false;
+    for (const [f, t] of [[880, 0], [660, .22]]) {
+      const o = alarmCtx.createOscillator(), g = alarmCtx.createGain();
+      o.type = 'square'; o.frequency.value = f; o.connect(g); g.connect(alarmCtx.destination);
+      g.gain.setValueAtTime(.12, alarmCtx.currentTime + t); o.start(alarmCtx.currentTime + t); o.stop(alarmCtx.currentTime + t + .2);
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+/** The driver's screen for one ambulance. `m` = {city, emergency, clock, speed, ambulances, incidents, details}. */
+function makeCrewView(wrap, ambId, onAck) {
+  let alerting = false;
+  const acked = new Set();
+  setInterval(() => { if (alerting) { beep(); if (navigator.vibrate) navigator.vibrate(300); } }, 1500);
+  return {
+    get alerting() { return alerting; },
+    update(m) {
+      const a = m.ambulances.find(x => String(x.id) === String(ambId));
+      if (!a) { wrap.innerHTML = `<p>AMB-${esc(ambId)} is not in this city's fleet.</p>`; alerting = false; return; }
+      const inc = a.incident ? m.incidents.find(i => i.id === a.incident) : null, det = a.incident ? m.details[a.incident] || {} : {};
+      if (det.ackAt) acked.add(a.incident);
+      alerting = a.phase === 'EN_ROUTE' && !acked.has(a.incident);
+      const ad = det.address || {}, sec = a.secondsLeft / m.speed, left = `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+      let html = `<div class="hint" style="margin-bottom:6px">AMB-${a.id} · ${a.unit === 'ALS' ? 'paramedic' : 'basic'} unit · ${esc(m.city)} · ${esc(m.clock)}</div>`;
+      if (!a.incident || a.phase === 'RETURNING') html += `<p style="font-size:16px">${a.phase === 'RETURNING' ? '↩️ Returning to base' : '🟢 Available at base'}. Waiting for the next job…</p>`;
+      else {
+        const sev = inc ? inc.severity : det.severity || '';
+        html += `<div class="${alerting ? 'alertbox' : ''}" style="padding:10px;border-radius:12px">
+          <div style="font-size:18px;font-weight:800">${a.phase === 'EN_ROUTE' ? '🚨 EMERGENCY: GO NOW' : {ON_SCENE: '🩺 On scene', TRANSPORTING: '🏥 Transporting patient', HANDOVER: '🤝 Handover at hospital'}[a.phase] || a.phase}</div>
+          <div style="margin:6px 0"><span class="sev ${sev}">${esc(sev.replace('_', ' '))}</span> <b>${esc(inc ? inc.category : det.category || '')}</b> · ${esc(a.incident)}</div>
+          <div style="font:700 26px 'JetBrains Mono',monospace;color:var(--accent)">${left}</div><div class="hint">${a.phase === 'EN_ROUTE' ? 'to the patient' : 'left in this stage'}</div>
+          <p style="margin:8px 0 4px"><b>📍 ${esc(ad.line || (inc ? `${inc.lat.toFixed(5)}, ${inc.lon.toFixed(5)}` : ''))}</b></p>
+          ${ad.flat ? `<div>🏠 ${esc(ad.flat)}</div>` : ''}${ad.landmark ? `<div>🧭 Landmark: ${esc(ad.landmark)}</div>` : ''}${ad.note ? `<div>📝 ${esc(ad.note)}</div>` : ''}
+          <div class="hint" style="margin-top:4px">Caller said: “${esc(inc ? inc.notes : det.notes || '')}”</div>
+          ${det.hospital ? `<div style="margin-top:6px">🏥 Take patient to <b>${esc(det.hospital)}</b></div>` : ''}
+        </div>
+        <div class="crewbtns">
+          ${alerting ? `<button class="go ackBtn" style="grid-column:1/-1;font-size:17px">✅ Acknowledge job</button>` : ''}
+          <a class="callbtn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${inc ? `${inc.lat},${inc.lon}` : ''}&travelmode=driving">🧭 Navigate</a>
+          ${ad.phone ? `<a class="callbtn" href="tel:${esc(ad.phone.replace(/[^0-9+]/g, ''))}">📞 Call patient</a>` : `<a class="callbtn alt" href="tel:${esc(m.emergency)}">📞 Control room</a>`}
+          ${det.hospitalPhone ? `<a class="callbtn alt" href="tel:${esc(det.hospitalPhone.replace(/[^0-9+]/g, ''))}">🏥 Call hospital</a>` : ''}
+        </div>`;
+      }
+      wrap.innerHTML = html;
+      const ab = wrap.querySelector('.ackBtn');
+      if (ab) ab.onclick = () => { acked.add(a.incident); alerting = false; onAck(a.id, a.incident); ab.remove(); };
+    }
+  };
+}
+
+function crewMessage(s) {
+  const details = {};
+  for (const c of myCalls) details[c.id] = {address: c.address, notes: c.notes, severity: c.severity, category: c.category, hospital: c.hospital, hospitalPhone: c.hospitalPhone, lat: c.lat, lon: c.lon, ackAt: c.ackAt};
+  return {type: 'state', city: $('cityTag').textContent, emergency: EMERG, clock: s.clock, speed: s.speed, ambulances: s.ambulances, incidents: [...(s.mine || []), ...s.incidents], details};
+}
+function ackCall(incident) { const c = myCalls.find(x => x.id === incident); if (c && !c.ackAt) { c.ackAt = Date.now(); saveCalls(); poll(); } }
+
+// In-page driver's phone (opens automatically after dispatch; the Send click already unlocked sound)
+let phoneView = null, phoneAmb = null;
+function openPhone(ambId) {
+  phoneAmb = ambId;
+  let el = $('phone');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'phone'; el.className = 'phone';
+    el.innerHTML = `<div class="phonebar"><b>📲 Driver's phone</b> <span id="phoneAmb"></span><button class="ghost" id="phoneClose" title="Hide">×</button></div><div id="phoneBody"></div>
+      <div class="hint" style="margin-top:6px">What the crew of the assigned ambulance sees. <a id="phoneTab" target="_blank" rel="noopener" style="color:var(--accent)">Open full screen</a></div>`;
+    $('mainLive').appendChild(el);
+    $('phoneClose').onclick = () => { el.hidden = true; phoneAmb = null; };
+  }
+  el.hidden = false;
+  $('phoneAmb').textContent = `AMB-${ambId}`; $('phoneTab').href = `?crew=${ambId}`;
+  phoneView = makeCrewView($('phoneBody'), ambId, (amb, incident) => ackCall(incident));
+}
+function updatePhone(s) { if (phoneView && phoneAmb != null && $('phone') && !$('phone').hidden) phoneView.update(crewMessage(s)); }
+
+// Full-screen crew app in its own tab (?crew=<ambulance id>); jobs arrive from the dispatcher tab on this device
 function crewMain(ambId) {
-  document.querySelector('header').querySelector('nav').remove();
-  $('citySel').remove();
+  document.querySelector('header nav').remove(); $('citySel').remove();
   document.querySelector('.kpis').innerHTML = '<div class="kpi"><b id="cClock">—</b><span>clock</span></div>';
   $('mainLive').remove(); $('results').remove();
   $('modeTag').textContent = 'crew app';
-  const soundBar = document.createElement('div'); soundBar.className = 'crewscreen';
-  soundBar.innerHTML = `<div class="row" style="justify-content:center;gap:8px;flex-wrap:wrap"><button class="go" id="soundOn">🔊 Tap to enable alarm sound</button><button class="ghost" id="soundTest">Test alarm</button></div>
-    <p class="hint" style="text-align:center;margin:6px 0 0">Browsers only allow sound after you tap the page once.</p>`;
-  document.body.appendChild(soundBar);
-  const wrap = document.createElement('div'); wrap.className = 'crewscreen'; document.body.appendChild(wrap);
-  let lastAlert = null, acked = new Set(), audio = null, seen = 0;
-  const beep = () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = 880; o.connect(g); g.connect(audio.destination); g.gain.setValueAtTime(.2, audio.currentTime); o.start(); o.stop(audio.currentTime + .35); } catch (e) { } };
-  setInterval(() => { if (lastAlert && !acked.has(lastAlert)) { beep(); if (navigator.vibrate) navigator.vibrate(300); } }, 1500);
-  setTimeout(() => { if (!seen) wrap.innerHTML = `<div class="card"><h3>🚑 Crew app · AMB-${ambId}</h3><p>No dispatcher found. Open the GoldenHour dispatcher page in another tab of this browser (same device) and keep it open: jobs are pushed from there.</p><p class="hint">In a real deployment the crew tablet receives jobs from the dispatch server over a push channel (FCM/APNs or WebSocket), with radio as a fallback.</p></div>`; }, 3000);
-  crewChannel && (crewChannel.onmessage = e => {
+  const box = document.createElement('div'); box.className = 'crewscreen';
+  box.innerHTML = `<div class="card"><h3>🚑 Crew app · AMB-${esc(ambId)}</h3><div id="soundRow"></div><div id="crewBody"><p>Connecting to the dispatcher…</p></div></div>
+    <p class="hint" style="text-align:center">Demo: jobs arrive from the dispatcher tab on this device. Production: push notification + WebSocket from the dispatch server to the crew tablet.</p>`;
+  document.body.appendChild(box);
+  const view = makeCrewView($('crewBody'), ambId, (amb, incident) => crewChannel && crewChannel.postMessage({type: 'ack', amb, incident, at: Date.now()}));
+  // This tab never had a click, so the browser blocks sound until one tap; show a one-tap prompt only while a job is ringing.
+  const soundRow = () => { $('soundRow').innerHTML = view.alerting && (!alarmCtx || alarmCtx.state !== 'running')
+    ? '<button class="go" id="soundOn" style="width:100%;margin-bottom:8px">🔔 New job: tap to hear the alarm</button>' : '';
+    const b = $('soundOn'); if (b) b.onclick = () => { unlockAudio(); beep(); soundRow(); }; };
+  document.body.addEventListener('pointerdown', unlockAudio);
+  let seen = 0;
+  setTimeout(() => { if (!seen) $('crewBody').innerHTML = '<p>No dispatcher found. Open the GoldenHour dispatcher page in another tab of this browser and keep it open: jobs are pushed from there.</p>'; }, 3000);
+  if (crewChannel) crewChannel.onmessage = e => {
     const m = e.data; if (m.type !== 'state') return;
     seen++;
     $('cClock').textContent = m.clock; $('cityTag').textContent = m.city; $('emNum').textContent = m.emergency; $('emNum').href = 'tel:' + m.emergency;
-    const a = m.ambulances.find(x => String(x.id) === String(ambId));
-    if (!a) { wrap.innerHTML = `<div class="card">AMB-${esc(ambId)} is not in this city's fleet.</div>`; return; }
-    const inc = a.incident ? m.incidents.find(i => i.id === a.incident) : null, det = a.incident ? m.details[a.incident] || {} : {};
-    const ad = det.address || {}, left = `${Math.floor(a.secondsLeft / m.speed / 60)}:${String(Math.round(a.secondsLeft / m.speed % 60)).padStart(2, '0')}`;
-    const dest = inc ? `${inc.lat},${inc.lon}` : '';
-    if (a.phase === 'EN_ROUTE' && a.incident !== lastAlert) lastAlert = a.incident;
-    if (det.ackAt) acked.add(a.incident);
-    let html = `<div class="card"><h3>🚑 Crew app · AMB-${a.id} (${a.unit === 'ALS' ? 'paramedic' : 'basic'} unit) · ${esc(m.city)}</h3>`;
-    if (!a.incident || a.phase === 'RETURNING') html += `<p style="font-size:18px">${a.phase === 'RETURNING' ? '↩️ Returning to base' : '🟢 Available at base'}. Waiting for the next job…</p><p class="hint">Keep this screen open. A new job sounds an alarm and vibrates.</p>`;
-    else {
-      const sev = inc ? inc.severity : det.severity || '';
-      html += `<div class="${a.phase === 'EN_ROUTE' && !acked.has(a.incident) ? 'alertbox' : ''}">
-        <div style="font-size:20px;font-weight:800">${a.phase === 'EN_ROUTE' ? '🚨 EMERGENCY: GO NOW' : {ON_SCENE: '🩺 On scene', TRANSPORTING: '🏥 Transporting patient', HANDOVER: '🤝 Handover at hospital'}[a.phase] || a.phase}</div>
-        <div style="margin:6px 0"><span class="sev ${sev}">${esc(sev.replace('_', ' '))}</span> <b>${esc(inc ? inc.category : det.category || '')}</b> · ${esc(a.incident)}</div>
-        <div style="font:700 30px 'JetBrains Mono',monospace;color:var(--accent)">${left}</div><div class="hint">${a.phase === 'EN_ROUTE' ? 'to the patient' : 'remaining in this stage'}</div>
-        <p style="margin:8px 0 4px"><b>📍 ${esc(ad.line || (inc ? `${inc.lat.toFixed(5)}, ${inc.lon.toFixed(5)}` : ''))}</b></p>
-        ${ad.flat ? `<div>🏠 ${esc(ad.flat)}</div>` : ''}${ad.landmark ? `<div>🧭 Landmark: ${esc(ad.landmark)}</div>` : ''}${ad.note ? `<div>📝 ${esc(ad.note)}</div>` : ''}
-        <div class="hint" style="margin-top:4px">Caller said: “${esc(inc ? inc.notes : det.notes || '')}”</div>
-        ${det.hospital ? `<div style="margin-top:6px">🏥 Take patient to <b>${esc(det.hospital)}</b></div>` : ''}
-      </div>
-      <div class="crewbtns">
-        ${a.phase === 'EN_ROUTE' && !acked.has(a.incident) ? `<button class="go" id="ackBtn" style="grid-column:1/-1;font-size:18px">✅ Acknowledge job</button>` : ''}
-        <a class="callbtn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving">🧭 Navigate</a>
-        ${ad.phone ? `<a class="callbtn" href="tel:${esc(ad.phone.replace(/[^0-9+]/g, ''))}">📞 Call patient</a>` : `<a class="callbtn alt" href="tel:${esc(m.emergency)}">📞 Control room</a>`}
-        ${det.hospitalPhone ? `<a class="callbtn alt" href="tel:${esc(det.hospitalPhone.replace(/[^0-9+]/g, ''))}">🏥 Call hospital</a>` : ''}
-      </div>`;
-    }
-    html += `</div><p class="hint" style="text-align:center">Demo crew screen: jobs arrive from the dispatcher tab on this device. Production: push notification + WebSocket from the dispatch server.</p>`;
-    wrap.innerHTML = html;
-    const ab = $('ackBtn');
-    if (ab) ab.onclick = () => { acked.add(a.incident); crewChannel.postMessage({type: 'ack', amb: a.id, incident: a.incident, at: Date.now()}); ab.remove(); try { audio && audio.resume(); } catch (e) { } };
-  });
-  const unlock = () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (e) { } };
-  $('soundOn').onclick = () => { unlock(); beep(); $('soundOn').textContent = '🔊 Alarm sound on'; $('soundOn').disabled = true; };
-  $('soundTest').onclick = () => { unlock(); let k = 0; const t = setInterval(() => { beep(); if (navigator.vibrate) navigator.vibrate(300); if (++k === 3) clearInterval(t); }, 500); };
-  document.body.addEventListener('click', unlock, {once: true});
-}
-
-['l-routes','l-bases'].forEach(id => $(id) && ($(id).onchange = () => {
-  const lyr = {['l-routes']:layers.routes, ['l-bases']:layers.bases}[id];
-  $(id).checked ? lyr.addTo(map) : map.removeLayer(lyr);
-}));
-
-// ---------------------------------------------------------------- routing lab
-$('labReset').onclick = () => { labPts = []; layers.lab.clearLayers(); $('labOut').innerHTML = ''; };
-async function runLab() {
-  const [a, b] = labPts, q = `from=${a.lat},${a.lng}&to=${b.lat},${b.lng}`;
-  const rows = [];
-  const algos = ROUTING === 'A*' ? ['dijkstra', 'astar', 'bidi'] : ['dijkstra', 'astar', 'bidi', 'ch'];
-  for (const algo of algos) rows.push((await call('GET', `/api/v1/route?${q}&algo=${algo}`)).json);
-  const ch = rows[rows.length - 1];
-  if (ch.path.length) L.polyline(ch.path, {color:css('--accent'), weight:5}).addTo(layers.lab);
-  const base = rows[0].settledNodes;
-  $('labOut').innerHTML = `<p>Drive time <b>${fmt(ch.minutes)} min</b> — all ${rows.length} agree${rows.every(r => Math.abs(r.minutes - ch.minutes) < 1e-6) ? ' exactly ✓' : ' ✗'}</p>
-    <table><tr><th>Algorithm</th><th class="num">nodes settled</th><th class="num">vs Dijkstra</th><th class="num">time</th></tr>` +
-    rows.map(r => `<tr><td>${r.algorithm}</td><td class="num">${r.settledNodes.toLocaleString()}</td><td class="num">${fmt(base / Math.max(1, r.settledNodes), 0)}× less</td><td class="num">${fmt(r.queryMs, 2)} ms</td></tr>`).join('') + `</table>
-    <p class="hint">${ROUTING === 'A*' ? 'This city was built live in your browser, so it routes with A*. The prebuilt cities also have contraction hierarchies, preprocessed offline by the Java core.' : 'Contraction hierarchies precompute "shortcut" edges once, then every query only climbs upward from both ends.'}</p>`;
-}
-
-// ---------------------------------------------------------------- results
-function mdTable(md) {
-  const lines = md.split('\n'), out = [];
-  let i = 0;
-  while (i < lines.length) {
-    if (lines[i].startsWith('|')) {
-      const rows = [];
-      while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
-      const cells = r => r.split('|').slice(1, -1).map(c => c.trim().replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'));
-      out.push(`<table><tr>${cells(rows[0]).map((c, j) => `<th class="${j ? 'num' : ''}">${c}</th>`).join('')}</tr>${rows.slice(2).map(r => `<tr>${cells(r).map((c, j) => `<td class="${j ? 'num' : ''}">${c}</td>`).join('')}</tr>`).join('')}</table>`);
-    } else {
-      const l = lines[i++].trim();
-      if (l.startsWith('# ')) continue;
-      if (l.startsWith('## ')) out.push(`<h2 style="margin-top:14px">${esc(l.slice(3))}</h2>`);
-      else if (l) out.push(`<p>${esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`);
-    }
-  }
-  return out.join('');
-}
-
-async function loadResults() {
-  const r = (await call('GET', '/api/v1/reports')).json;
-  const f = r.forecast;
-  let fc = '';
-  if (f) {
-    const names = Object.keys(f.metrics);
-    fc = `<p>${f.calls.toLocaleString()} real EMS calls, ${f.zones} zones (≈5 km cells), last 4 weeks held out (${esc(f.test_period[0].slice(0,10))} → ${esc(f.test_period[1].slice(0,10))}).</p>
-      <table><tr><th>Model</th><th class="num">Poisson deviance ↓</th><th class="num">WAPE per zone-shift ↓</th><th class="num">hotspot capture@5 ↑</th></tr>` +
-      names.map(n => { const m = f.metrics[n]; return `<tr><td>${esc(n)}</td><td class="num">${fmt(m.poisson_deviance,4)}</td><td class="num">${fmt(100*m.wape_zone_shift,1)}%</td><td class="num">${fmt(100*m['hotspot_capture@5'],1)}%</td></tr>`; }).join('') + `</table>
-      <p class="hint">Finding: a LightGBM model with lag/rolling features ties a simple separable model (zone rate × hour-of-week profile). Calls per zone-hour are close to pure Poisson noise, so the separable model is what feeds the planner — simpler, explainable, and it transfers to a new city.</p>`;
-    if (f.spatial_stability_by_shift) {
-      const s = f.spatial_stability_by_shift;
-      fc += `<h2 style="margin-top:14px">Does <i>where</i> emergencies happen change by shift?</h2><table><tr><th>Shift</th><th class="num">calls</th><th class="num">shift vs all-day TVD</th><th class="num">noise-only p99</th></tr>` +
-        Object.entries(s).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.calls.toLocaleString()}</td><td class="num">${fmt(100*v.tvd_observed,1)}%</td><td class="num">${fmt(100*v.tvd_noise_p99,1)}%</td></tr>`).join('') +
-        `</table><p class="hint">Only about 0.4–1.5% of call mass moves between shifts beyond sampling noise — which is why re-positioning every shift doesn't pay in the simulator.</p>`;
-    }
-  }
-  $('resultsGrid').innerHTML = `
-    <div class="card wide"><h2>Simulation: same fleet, smarter decisions</h2>${r.simulation ? mdTable(r.simulation) : '<p>Run <code>simulate</code> to generate.</p>'}</div>
-    <div class="card"><h2>Demand forecasting on real 911 calls</h2>${fc || '<p>Run the ML pipeline to generate.</p>'}</div>
-    <div class="card"><h2>Routing &amp; dispatch performance</h2>${r.benchmarks ? mdTable(r.benchmarks) : '<p>Run <code>bench</code> to generate.</p>'}</div>`;
+    view.update(m); soundRow();
+    if (view.alerting && 'Notification' in window && Notification.permission === 'granted' && !crewMain.notified) { crewMain.notified = true; new Notification('🚨 GoldenHour: new emergency job', {body: 'Open the crew app now'}); }
+  };
 }
 
 // start: crew screen (?crew=<id>) or the dispatcher

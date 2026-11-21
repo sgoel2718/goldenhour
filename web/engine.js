@@ -74,6 +74,7 @@
           if (Math.max(Math.abs(i - ca), Math.abs(j - co)) !== r) continue;
           for (const v of this.grid.get(i + ':' + j) || []) { const d = haversine(a, o, this.lat[v], this.lon[v]); if (d < bd) { bd = d; best = v; } }
         }
+      if (best < 0) for (let v = 0; v < this.n; v++) { const d = haversine(a, o, this.lat[v], this.lon[v]); if (d < bd) { bd = d; best = v; } }   // far outside: full scan
       return best;
     }
     edgeWeight(u, v) { const o = this.out; let w = Infinity; for (let i = o.start[u]; i < o.start[u + 1]; i++) if (o.tgt[i] === v) w = Math.min(w, o.wt[i]); return w; }

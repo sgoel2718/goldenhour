@@ -11,7 +11,8 @@
 'use strict';
 
 (function () {
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  // public Overpass mirrors, raced in parallel: the first good answer wins and the others are cancelled
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
   const SPEED = { motorway: 90, trunk: 70, primary: 55, secondary: 45, tertiary: 40, unclassified: 30, residential: 25, living_street: 10,
     service: 15, motorway_link: 50, trunk_link: 40, primary_link: 40, secondary_link: 35, tertiary_link: 30, road: 30 };
   const HOMES = { residential: 1, living_street: 1, unclassified: 0.5, tertiary: 0.4, secondary: 0.2, service: 0.1 };
@@ -24,17 +25,24 @@
   const R = 6371000, rad = Math.PI / 180;
   const hav = (a1, o1, a2, o2) => { const x = Math.sin((a2 - a1) * rad / 2) ** 2 + Math.cos(a1 * rad) * Math.cos(a2 * rad) * Math.sin((o2 - o1) * rad / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
 
-  async function overpass(query, progress) {
-    let lastErr;
-    for (const url of OVERPASS) {
-      try {
-        progress(`Downloading OpenStreetMap data from ${new URL(url).host}…`);
-        const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(query), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return await r.json();
-      } catch (e) { lastErr = e; }
-    }
-    throw new Error('OpenStreetMap servers are busy or unreachable (' + (lastErr && lastErr.message) + '). Try again in a minute.');
+  async function overpass(query, progress, label = 'map data') {
+    const t0 = performance.now(), ctrls = OVERPASS.map(() => new AbortController());
+    let bytes = 0;
+    const tick = setInterval(() => progress(`Downloading ${label} from OpenStreetMap… ${((performance.now() - t0) / 1000).toFixed(0)} s${bytes ? ` · ${(bytes / 1e6).toFixed(1)} MB` : ''}`), 500);
+    const one = async (url, k) => {
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctrls[k].signal,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      ctrls.forEach((c, j) => { if (j !== k) c.abort(); });          // this mirror answered first: cancel the rest
+      const reader = r.body.getReader(), parts = [];
+      for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); bytes += value.length; }
+      return JSON.parse(new TextDecoder().decode(await new Blob(parts).arrayBuffer()));
+    };
+    try {
+      return await Promise.any(OVERPASS.map(one));
+    } catch (e) {
+      throw new Error('OpenStreetMap servers are busy right now. Please try again in a minute.');
+    } finally { clearInterval(tick); }
   }
 
   function speedOf(tags, cls) {
@@ -84,13 +92,13 @@
    * Build a city bundle around (lat, lon). `radius` in metres (3–6 km keeps the download and the browser fast).
    * Returns the same structure as the Java ExportStatic bundles (minus the contraction hierarchy).
    */
-  async function buildCity({ lat, lon, radius = 4000, name = 'City', cc = '' }, progress = () => {}, model) {
+  async function buildCity({ lat, lon, radius = 3000, name = 'City', cc = '' }, progress = () => {}, model) {
     const t0 = performance.now();
-    const hw = Object.keys(SPEED).join('|');
-    const roads = await overpass(`[out:json][timeout:120];way["highway"~"^(${hw})$"]["access"!~"^(no|private)$"]["area"!="yes"](around:${radius},${lat},${lon});(._;>;);out body qt;`, progress);
-    progress('Downloading hospitals…');
-    let hosp = { elements: [] };
-    try { hosp = await overpass(`[out:json][timeout:60];nwr["amenity"="hospital"](around:${radius},${lat},${lon});out center tags qt;`, progress); } catch (e) { /* roads without hospitals still work */ }
+    // service roads (parking aisles, driveways) are skipped: they are most of the download and rarely matter for an ambulance route
+    const hw = Object.keys(SPEED).filter(k => k !== 'service').join('|');
+    const [roads, hosp] = await Promise.all([
+      overpass(`[out:json][timeout:90];way["highway"~"^(${hw})$"]["access"!~"^(no|private)$"]["area"!="yes"](around:${radius},${lat},${lon})->.w;.w out body qt;node(w.w);out skel qt;`, progress, 'roads'),
+      overpass(`[out:json][timeout:60];nwr["amenity"="hospital"](around:${radius + 1500},${lat},${lon});out center tags qt;`, () => {}, 'hospitals').catch(() => ({ elements: [] }))]);
 
     progress('Building the road graph…');
     const pos = new Map();
